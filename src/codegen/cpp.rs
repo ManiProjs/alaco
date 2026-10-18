@@ -644,11 +644,11 @@ impl CppCodegen {
             self.push_line("template <typename T> static void println(const T& value) {");
 
             self.indent += 1;
-            self.push_line("std::cout << value << '\\n';");
+            self.push_line("std::cout << value << '\\n' << std::flush;");
             self.indent -= 1;
 
             self.push_line("}");
-            self.push_line("static void println(bool value) { std::cout << (value ? \"true\" : \"false\") << '\\n'; }");
+            self.push_line("static void println(bool value) { std::cout << (value ? \"true\" : \"false\") << '\\n' << std::flush; }");
             self.push_line("");
         }
 
