@@ -91,6 +91,7 @@ Put test programs in `tests/` with one `.aco` file per test. Each file is compil
 - [Examples catalog](examples/README.md) — runnable examples grouped by language feature, module, and package workflow, including an intentional diagnostic fixture.
 - [Editor support](editors/README.md) — VS Code, Neovim, and Vim syntax highlighting, compiler commands, and LSP integration.
 - [Language Server](docs/lsp.md) — LSP setup, editor features, and current implementation boundaries.
+- [AlacoUp release metadata](docs/alacoup-releases.md) — stable manifest URL, archive variants, target triples, and checksum format.
 
 ## Standard library example
 

@@ -27,7 +27,7 @@ jobs:
         run: cargo test --locked
 
   build:
-    name: Build ${{ matrix.artifact }}
+    name: Build ${{ matrix.target }}
     if: startsWith(github.ref, 'refs/tags/v')
     needs: test
     strategy:
@@ -36,16 +36,12 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact: alaco-linux-x86_64
           - os: macos-15-intel
             target: x86_64-apple-darwin
-            artifact: alaco-macos-x86_64
           - os: macos-14
             target: aarch64-apple-darwin
-            artifact: alaco-macos-aarch64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact: alaco-windows-x86_64
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
@@ -56,77 +52,111 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-      - name: Install LLVM on Windows
-        if: runner.os == 'Windows'
-        run: choco install llvm --no-progress -y
       - name: Cache Cargo build
         uses: Swatinem/rust-cache@v2
       - name: Build release binary
         run: cargo build --locked --release --target ${{ matrix.target }}
-      - name: Package Unix release
+      - name: Package Unix archives
         if: runner.os != 'Windows'
         shell: bash
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
-          package="${{ matrix.artifact }}-${version}"
-          mkdir -p "$package/std"
-          cp "target/${{ matrix.target }}/release/alaco" "$package/alaco"
-          cp -R std/. "$package/std/"
-          cat > "$package/INSTALL.txt" <<'EOF'
-          Alaco binary distribution
-
-          Run ./alaco --help to see available commands.
-          The std/ directory contains the standard library. Set ALACO_STDLIB_DIR
-          to its absolute path, or copy std/ to ~/.alaco/stdlib.
-          Building Alaco programs also requires clang++ and the platform's native
-          development libraries for any imported modules.
+          target="${{ matrix.target }}"
+          binary="alaco-${version}-${target}-binary"
+          bundle="alaco-${version}-${target}"
+          mkdir -p "$binary" "$bundle/std"
+          cp "target/${target}/release/alaco" "$binary/alaco"
+          cp "target/${target}/release/alaco" "$bundle/alaco"
+          cp -R std/std/. "$bundle/std/"
+          cat > "$binary/INSTALL.txt" <<'EOF'
+          Alaco binary-only distribution
+          Requires clang++ to compile Alaco programs. Install the standard library
+          separately, then set ALACO_STDLIB_DIR to its installation directory.
           EOF
-          tar -czf "${package}.tar.gz" "$package"
-      - name: Package Windows release
+          cat > "$bundle/INSTALL.txt" <<'EOF'
+          Alaco combined distribution
+          The std/ directory contains the Alaco standard library. Set ALACO_STDLIB_DIR
+          to the absolute path of this distribution directory, or install std/ under
+          ~/.alaco/stdlib/std. Building Alaco programs also requires clang++.
+          EOF
+          tar -czf "${binary}.tar.gz" -C "$binary" alaco INSTALL.txt
+          tar -czf "${bundle}.tar.gz" -C "$bundle" alaco std INSTALL.txt
+      - name: Package Windows archives
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $version = $env:GITHUB_REF_NAME.Substring(1)
-          $package = "${{ matrix.artifact }}-$version"
-          New-Item -ItemType Directory -Force "$package/std" | Out-Null
-          Copy-Item "target/${{ matrix.target }}/release/alaco.exe" "$package/alaco.exe"
-          Copy-Item "std/*" "$package/std" -Recurse
+          $target = "${{ matrix.target }}"
+          $binary = "alaco-$version-$target-binary"
+          $bundle = "alaco-$version-$target"
+          New-Item -ItemType Directory -Force $binary, "$bundle/std" | Out-Null
+          Copy-Item "target/$target/release/alaco.exe" "$binary/alaco.exe"
+          Copy-Item "target/$target/release/alaco.exe" "$bundle/alaco.exe"
+          Copy-Item "std/std/*" "$bundle/std" -Recurse
           @'
-          Alaco binary distribution
-
-          Run .\alaco.exe --help to see available commands.
-          The std\ directory contains the standard library. Set ALACO_STDLIB_DIR
-          to its absolute path, or copy std\ to %USERPROFILE%\.alaco\stdlib.
-          Building Alaco programs also requires clang++ and the platform's native
-          development tools for any imported modules.
-          '@ | Set-Content "$package/INSTALL.txt"
-          Compress-Archive -Path "$package/*" -DestinationPath "$package.zip"
-      - name: Upload release archive
+          Alaco binary-only distribution
+          Requires clang++ to compile Alaco programs. Install the standard library
+          separately, then set ALACO_STDLIB_DIR to its installation directory.
+          '@ | Set-Content "$binary/INSTALL.txt"
+          @'
+          Alaco combined distribution
+          The std\ directory contains the Alaco standard library. Set ALACO_STDLIB_DIR
+          to the absolute path of this distribution directory, or install std\ under
+          %USERPROFILE%\.alaco\stdlib\std. Building Alaco programs also requires clang++.
+          '@ | Set-Content "$bundle/INSTALL.txt"
+          tar.exe -czf "$binary.tar.gz" -C $binary alaco.exe INSTALL.txt
+          tar.exe -czf "$bundle.tar.gz" -C $bundle alaco.exe std INSTALL.txt
+      - name: Upload platform archives
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: ${{ matrix.artifact }}-*.${{ runner.os == 'Windows' && 'zip' || 'tar.gz' }}
+          name: ${{ matrix.target }}
+          path: alaco-*-${{ matrix.target }}*.tar.gz
           if-no-files-found: error
           retention-days: 7
 
   publish:
-    name: Publish GitHub Release
+    name: Publish Release and AlacoUp Manifest
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Download release archives
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Download platform archives
         uses: actions/download-artifact@v4
         with:
           path: release-assets
           merge-multiple: true
+      - name: Package standard library
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          package="alaco-${version}-stdlib"
+          mkdir -p "$package/std"
+          cp -R std/std/. "$package/std/"
+          cat > "$package/INSTALL.txt" <<'EOF'
+          Alaco standard-library-only distribution
+          Extract this archive and set ALACO_STDLIB_DIR to the extracted directory.
+          To use the default per-user location, copy the std/ directory to
+          ~/.alaco/stdlib/std (or %USERPROFILE%\.alaco\stdlib\std on Windows).
+          EOF
+          tar -czf "release-assets/${package}.tar.gz" -C "$package" std INSTALL.txt
+      - name: Generate checksums and AlacoUp manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release-assets
+          sha256sum *.tar.gz > SHA256SUMS
+          python3 ../scripts/generate-release-manifest.py
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           name: Alaco ${{ github.ref_name }}
+          prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: release-assets/*
