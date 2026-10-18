@@ -40,7 +40,7 @@ See the [standard-library reference](/reference/standard-library) for available 
 - `import helpers as util;` gives the module a local alias.
 - `import hello from helpers;` imports one named function without the module prefix.
 
-Imports are resolved relative to the source file containing the import, not necessarily the shell's current directory. Imported modules are loaded before their dependents. Cyclic imports and duplicate module aliases are errors. Named imports currently select a single function per statement; package dependency declarations do not yet download packages or change this local import behavior.
+Imports are resolved relative to the source file containing the import, not necessarily the shell's current directory. Imported modules are loaded before their dependents. Cyclic imports and duplicate module aliases are errors. Named imports currently select a single function per statement. For dependencies declared in `Alaco.toml`, see [Dependencies and packages](/guide/dependencies): package imports resolve under the dependency's `src/` directory rather than relative to the importing file.
 
 ## String interpolation
 

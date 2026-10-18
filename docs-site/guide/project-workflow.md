@@ -35,7 +35,7 @@ entry = "src/main.aco"
 [dependencies]
 ```
 
-The package name and semantic version are required. The current supported edition is `2026`. The entry path must be a relative `.aco` path within the package. Dependency declarations can be parsed and displayed, but package fetching and dependency-based import resolution are not implemented yet.
+The package name and semantic version are required. The current supported edition is `2026`. The entry path must be a relative `.aco` path within the package. Add local or Git dependencies with `alaco add`; see the [dependency guide](/guide/dependencies) for package layout and lockfile behavior.
 
 ## 3. Use the check-run-build cycle
 
@@ -51,6 +51,8 @@ alaco build src/main.aco
 - `test` discovers and runs `.aco` test programs under `tests/`, or under a supplied file/directory.
 - `clean` removes generated artifacts from the current project's `target/` directory.
 
+Native builds use an incremental cache. Run `alaco build --explain` to inspect cache decisions, or `alaco build --no-cache` to force compilation. See [Incremental builds](/guide/build-cache).
+
 Within a project, commands that accept an optional source path use the configured entry point where applicable. Run `alaco --help` for the installed version's full option list.
 
 ## 4. Organize local modules
@@ -65,9 +67,9 @@ src/
     greetings.aco
 ```
 
-From `src/main.aco`, `import helpers;` resolves to `src/helpers.aco`, while `import helpers.greetings;` resolves to `src/helpers/greetings.aco`. A module can be renamed with `as`, or one function can be brought into the current namespace with `import hello from helpers;`.
+From `src/main.aco`, `import helpers;` resolves to `src/helpers.aco`, while `import helpers.greetings;` resolves to `src/helpers/greetings.aco`. A module can be renamed with `as`, or one function can be brought into the current namespace with `import hello from helpers;`. For a declared dependency named `utility`, `import utility;` resolves to its `src/lib.aco`, and `import utility.format;` resolves to `src/format.aco`.
 
-Keep the source files consistent with the import paths. Dotted imports require matching directories and `.aco` files; declaring a dependency in `Alaco.toml` does not make an external package importable yet. Cyclic imports and duplicate aliases are reported as errors.
+Keep the source files consistent with the import paths. Dotted imports require matching directories and `.aco` files. Cyclic imports and duplicate aliases are reported as errors.
 
 ## 5. Read diagnostics
 

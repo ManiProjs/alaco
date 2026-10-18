@@ -19,7 +19,8 @@ Alaco is a hobby language and an evolving compiler. These limitations are part o
 
 ## Packages and modules
 
-- Local imports resolve relative to the importing file. Manifest dependency declarations are parsed but do not download packages or make external packages importable.
+- Dependencies support local paths and Git repositories, but there is no central package registry or full SemVer implementation. Automatic Git tag selection requires numeric `vMAJOR.MINOR.PATCH` tags; prerelease ordering is not implemented.
+- Local path dependencies are live directories and are not pinned to a content hash in `Alaco.lock`.
 - Named imports currently select one function per import statement.
 
 ## JavaScript backend

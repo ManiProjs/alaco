@@ -34,12 +34,26 @@ document.querySelector('.copy-command')?.addEventListener('click', async (event)
   const button = event.currentTarget;
   const commands = 'cargo install --path .\nalaco new hello\ncd hello\nalaco run\nalaco check';
   try {
-    await navigator.clipboard.writeText(commands);
+    if (navigator.clipboard?.writeText && window.isSecureContext) {
+      await navigator.clipboard.writeText(commands);
+    } else {
+      throw new Error('Clipboard API unavailable');
+    }
     button.textContent = 'Copied ✓';
   } catch {
-    button.textContent = 'Select to copy';
+    const field = document.createElement('textarea');
+    field.value = commands;
+    field.setAttribute('readonly', '');
+    field.style.position = 'fixed';
+    field.style.opacity = '0';
+    document.body.append(field);
+    field.select();
+    const copied = document.execCommand('copy');
+    field.remove();
+    button.textContent = copied ? 'Copied ✓' : 'Copy unavailable';
   }
   window.setTimeout(() => { button.textContent = 'Copy commands'; }, 1800);
 });
 
-document.querySelector('#year').textContent = new Date().getFullYear();
+const year = document.querySelector('#year');
+if (year) year.textContent = new Date().getFullYear();

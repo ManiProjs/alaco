@@ -16,6 +16,8 @@ Alaco is a small, statically checked programming language implemented in Rust. I
   <a href="./guide/editor-support"><strong>04 · Improve your workflow</strong><span>Connect the language server to your editor.</span></a>
   <a href="./guide/testing"><strong>05 · Test programs</strong><span>Run focused `.aco` tests and keep regressions visible.</span></a>
   <a href="./guide/diagnostics"><strong>06 · Troubleshoot</strong><span>Understand compiler stages and diagnose common failures.</span></a>
+  <a href="./guide/dependencies"><strong>07 · Add dependencies</strong><span>Use local packages, Git sources, version constraints, and lockfiles.</span></a>
+  <a href="./guide/build-cache"><strong>08 · Build faster</strong><span>Understand cache decisions and force a fresh native build.</span></a>
 </div>
 
 ## At a glance

@@ -10,12 +10,15 @@ The compiler exposes commands for project setup, checking, building, execution, 
 | `alaco explain [file.aco]` | Check a file and display diagnostics when errors are found. |
 | `alaco build [file.aco]` | Build a native executable through generated C++. |
 | `alaco build [file.aco] --output <path>` | Select the native output path. |
+| `alaco build [file.aco] --explain` | Explain whether a native build is reused or rebuilt. |
+| `alaco build [file.aco] --no-cache` | Force a fresh native compilation. |
 | `alaco run [file.aco]` | Compile and execute a native program. |
 | `alaco transpile <file.aco> --target js` | Generate a JavaScript ES module; default output uses `.mjs`. |
 | `alaco test [path]` | Build and run `.aco` test programs in a directory or file. |
 | `alaco clean` | Remove generated project build artifacts. |
 | `alaco doctor` | Check the C++ compiler and standard library setup. |
 | `alaco manifest` | Validate and display package metadata. |
+| `alaco add <path-or-git-url>` | Add a local or Git dependency and update `Alaco.lock`. |
 | `alaco lsp` | Start the Language Server Protocol server over standard input/output. |
 | `alaco --help` | Show the command list and usage. |
 
@@ -53,6 +56,28 @@ alaco test tests/example.aco
 ```
 
 Test files are compiled and executed as separate programs. A successful process exit indicates a passing test; inspect fixtures before running them because examples may touch files, use the network, or execute shell commands.
+
+### Add a dependency
+
+Run the command from a directory containing `Alaco.toml`:
+
+```sh
+alaco add ../shared-library
+alaco add https://github.com/example/library.git --version '^1.2.0'
+alaco add https://github.com/example/library.git --tag v1.2.0
+```
+
+Git version selection uses matching `vMAJOR.MINOR.PATCH` tags and records the chosen commit in `Alaco.lock`. See [Dependencies and packages](/guide/dependencies) for resolution, imports, and lockfile behavior.
+
+### Diagnose incremental builds
+
+```sh
+alaco build --explain
+alaco build --no-cache
+alaco clean
+```
+
+`--explain` describes cache reuse or invalidation, `--no-cache` forces a compilation, and `clean` clears generated build and local Git checkout caches. See [Incremental builds](/guide/build-cache).
 
 ## Exit status and diagnostics
 
