@@ -88,10 +88,10 @@ fn read_message(reader: &mut impl BufRead) -> io::Result<Option<Value>> {
         if line == "\r\n" || line == "\n" {
             break;
         }
-        if let Some((name, value)) = line.split_once(':') {
-            if name.eq_ignore_ascii_case("content-length") {
-                content_length = value.trim().parse::<usize>().ok();
-            }
+        if let Some((name, value)) = line.split_once(':')
+            && name.eq_ignore_ascii_case("content-length")
+        {
+            content_length = value.trim().parse::<usize>().ok();
         }
     }
     let Some(length) = content_length else {
@@ -259,15 +259,13 @@ impl Server {
                     }
                 } else if params.get("command").and_then(Value::as_str)
                     == Some("alaco.checkDocument")
-                {
-                    if let Some(uri) = params
+                    && let Some(uri) = params
                         .get("arguments")
                         .and_then(Value::as_array)
                         .and_then(|args| args.first())
                         .and_then(Value::as_str)
-                    {
-                        self.publish_diagnostics(uri);
-                    }
+                {
+                    self.publish_diagnostics(uri);
                 }
                 Ok(Value::Null)
             }
@@ -529,29 +527,29 @@ impl Server {
         };
         let name = token.lexeme.trim();
         let mut markdown = keyword_help(name).map(str::to_owned);
-        if markdown.is_none() {
-            if let Ok(program) = parse(source) {
-                for item in program.items {
-                    match item {
-                        Item::Function(function) if function.name == name => {
-                            markdown = Some(format!(
-                                "```alaco\n{}\n```\n\nAlaco function.",
-                                signature(&function)
-                            ))
-                        }
-                        Item::Struct(s) if s.name == name => {
-                            markdown = Some(format!(
-                                "```alaco\nstruct {} {{ {} }}\n```",
-                                s.name,
-                                s.fields
-                                    .iter()
-                                    .map(|f| format!("{}: {}", f.name, type_name(&f.ty)))
-                                    .collect::<Vec<_>>()
-                                    .join(", ")
-                            ))
-                        }
-                        _ => {}
+        if markdown.is_none()
+            && let Ok(program) = parse(source)
+        {
+            for item in program.items {
+                match item {
+                    Item::Function(function) if function.name == name => {
+                        markdown = Some(format!(
+                            "```alaco\n{}\n```\n\nAlaco function.",
+                            signature(&function)
+                        ))
                     }
+                    Item::Struct(s) if s.name == name => {
+                        markdown = Some(format!(
+                            "```alaco\nstruct {} {{ {} }}\n```",
+                            s.name,
+                            s.fields
+                                .iter()
+                                .map(|f| format!("{}: {}", f.name, type_name(&f.ty)))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        ))
+                    }
+                    _ => {}
                 }
             }
         }
@@ -671,10 +669,10 @@ impl Server {
             let leading = line.len() - trimmed.len();
             let module_start_in_trimmed = if let Some(rest) = trimmed.strip_prefix("import ") {
                 Some(trimmed.len() - rest.len())
-            } else if let Some(rest) = trimmed.strip_prefix("from ") {
-                Some(trimmed.len() - rest.len())
             } else {
-                None
+                trimmed
+                    .strip_prefix("from ")
+                    .map(|rest| trimmed.len() - rest.len())
             };
             if let Some(module_start) = module_start_in_trimmed {
                 let rest = &trimmed[module_start..];
@@ -788,16 +786,16 @@ impl Server {
             return Value::Null;
         };
         for item in program.items {
-            if let Item::Function(function) = item {
-                if function.name == name || format!("{}.{}", "", function.name) == name {
-                    let label = signature(&function);
-                    let parameters = function
-                        .params
-                        .iter()
-                        .map(|p| json!({"label":format!("{}: {}",p.name,type_name(&p.ty))}))
-                        .collect::<Vec<_>>();
-                    return json!({"signatures":[{"label":label,"parameters":parameters}],"activeSignature":0,"activeParameter":active_parameter.min(function.params.len().saturating_sub(1) as u64)});
-                }
+            if let Item::Function(function) = item
+                && (function.name == name || format!("{}.{}", "", function.name) == name)
+            {
+                let label = signature(&function);
+                let parameters = function
+                    .params
+                    .iter()
+                    .map(|p| json!({"label":format!("{}: {}",p.name,type_name(&p.ty))}))
+                    .collect::<Vec<_>>();
+                return json!({"signatures":[{"label":label,"parameters":parameters}],"activeSignature":0,"activeParameter":active_parameter.min(function.params.len().saturating_sub(1) as u64)});
             }
         }
         let _ = uri;
@@ -912,10 +910,10 @@ impl Server {
                 if start.is_none() {
                     start = Some(i);
                 }
-            } else if let Some(first) = start.take() {
-                if i.saturating_sub(first) > 1 {
-                    ranges.push(json!({"startLine":first,"endLine":i-1,"kind":"comment"}));
-                }
+            } else if let Some(first) = start.take()
+                && i.saturating_sub(first) > 1
+            {
+                ranges.push(json!({"startLine":first,"endLine":i-1,"kind":"comment"}));
             }
         }
         json!(ranges)
@@ -1072,12 +1070,13 @@ impl Server {
                     TokenKind::RightParen => parens -= 1,
                     TokenKind::LeftBrace => braces += 1,
                     TokenKind::RightBrace => braces -= 1,
-                    TokenKind::Comma if parens == 0 && braces == 0 => {
-                        if cursor + 1 < tokens.len()
-                            && !matches!(tokens[cursor + 1].kind, TokenKind::RightParen)
-                        {
-                            argument_starts.push(cursor + 1);
-                        }
+                    TokenKind::Comma
+                        if parens == 0
+                            && braces == 0
+                            && cursor + 1 < tokens.len()
+                            && !matches!(tokens[cursor + 1].kind, TokenKind::RightParen) =>
+                    {
+                        argument_starts.push(cursor + 1);
                     }
                     _ => {}
                 }
@@ -1289,11 +1288,7 @@ fn normalize_spacing(line: &str) -> String {
             output.push(' ');
         }
         output.push(ch);
-        if in_string && ch == '\\' && !escaped {
-            escaped = true;
-        } else {
-            escaped = false;
-        }
+        escaped = in_string && ch == '\\' && !escaped;
     }
     output
 }
@@ -1305,7 +1300,7 @@ fn token_at(tokens: &[Token], offset: usize) -> Option<&Token> {
     tokens.iter().find(|token| {
         token.span.offset() <= offset
             && offset <= token.span.offset() + token.span.len()
-            && token.span.len() > 0
+            && !token.span.is_empty()
     })
 }
 
@@ -1557,12 +1552,13 @@ fn percent_decode(value: &str) -> String {
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
     while i < bytes.len() {
-        if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let Ok(byte) = u8::from_str_radix(&value[i + 1..i + 3], 16) {
-                out.push(byte);
-                i += 3;
-                continue;
-            }
+        if bytes[i] == b'%'
+            && i + 2 < bytes.len()
+            && let Ok(byte) = u8::from_str_radix(&value[i + 1..i + 3], 16)
+        {
+            out.push(byte);
+            i += 3;
+            continue;
         }
         out.push(bytes[i]);
         i += 1;

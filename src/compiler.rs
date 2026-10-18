@@ -25,8 +25,7 @@ pub struct CompilationUnit {
 
 impl Compiler {
     fn report(error: crate::error::AlacoError, filename: &str, source: &str) -> miette::Report {
-        miette::Report::new(error)
-            .with_source_code(NamedSource::new(filename.to_owned(), source.to_owned()))
+        miette::Report::new(error).with_source_code(NamedSource::new(filename, source.to_owned()))
     }
 
     pub fn parse(source: &str, filename: &str) -> Result<Program> {

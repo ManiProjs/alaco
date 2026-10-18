@@ -492,10 +492,9 @@ fn explain(file: &Path) -> Result<ExitCode> {
             if let Some(alaco_error) = error
                 .chain()
                 .find_map(|cause| cause.downcast_ref::<crate::error::AlacoError>())
+                && let Some((why, fix)) = alaco_error.explanation()
             {
-                if let Some((why, fix)) = alaco_error.explanation() {
-                    eprintln!("\nWhy: {why}\nSuggestion: {fix}");
-                }
+                eprintln!("\nWhy: {why}\nSuggestion: {fix}");
             }
 
             Err(error)

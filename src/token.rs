@@ -88,7 +88,7 @@ impl Token {
         Self {
             kind,
             lexeme: lexeme.into(),
-            span: SourceSpan::new(start.into(), length.into()),
+            span: SourceSpan::new(start.into(), length),
         }
     }
 }

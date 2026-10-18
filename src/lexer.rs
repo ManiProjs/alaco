@@ -288,7 +288,7 @@ impl<'a> Lexer<'a> {
             }
             let mut name = String::from(first);
             let mut closed = false;
-            while let Some((_, next)) = chars.next() {
+            for (_, next) in chars.by_ref() {
                 if next == '}' {
                     closed = true;
                     break;
@@ -449,7 +449,7 @@ impl<'a> Lexer<'a> {
         let mut in_single_quote = false;
         let mut in_double_quote = false;
 
-        while let Some((index, ch)) = self.chars.next() {
+        for (index, ch) in self.chars.by_ref() {
             self.current = index + ch.len_utf8();
 
             if escaped {
@@ -553,9 +553,6 @@ impl<'a> Lexer<'a> {
     }
 
     fn span(&self) -> SourceSpan {
-        SourceSpan::new(
-            self.start.into(),
-            self.current.saturating_sub(self.start).into(),
-        )
+        SourceSpan::new(self.start.into(), self.current.saturating_sub(self.start))
     }
 }

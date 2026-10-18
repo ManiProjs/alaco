@@ -466,10 +466,11 @@ impl<'a> Analyzer<'a> {
             // std.io's functions are part of the default unqualified API.
             // Other modules are accessed through their import alias, e.g.
             // math.max(...), and must not leak into the global function scope.
-            if !include_namespaced_modules && module.name != "std.io" {
-                if module.imported_symbols.is_empty() {
-                    continue;
-                }
+            if !include_namespaced_modules
+                && module.name != "std.io"
+                && module.imported_symbols.is_empty()
+            {
+                continue;
             }
 
             for item in &module.program.items {
@@ -1475,7 +1476,7 @@ impl<'a> Analyzer<'a> {
                         Some(*span),
                     ));
                 }
-                let actual = self.type_of_expression(&arguments[0], scopes, program, functions)?;
+                let actual = self.type_of_expression(arguments[0], scopes, program, functions)?;
                 if actual == Type::Void {
                     return Err(self.error(
                         "cannot print a value of type 'Void'",
@@ -1517,62 +1518,61 @@ impl<'a> Analyzer<'a> {
             span,
         } = callee
         {
-            if let Expr::Identifier(alias, _) = object.as_ref() {
-                if let Some(module) = self.find_module(alias) {
-                    let function = module
-                        .program
-                        .items
-                        .iter()
-                        .find_map(|item| match item {
-                            Item::Function(function) if function.name == *member => Some(function),
-                            _ => None,
-                        })
-                        .ok_or_else(|| {
-                            let suggestion = closest_name(
-                                member,
-                                module.program.items.iter().filter_map(|item| match item {
-                                    Item::Function(function) => Some(function.name.as_str()),
-                                    _ => None,
-                                }),
-                            );
-                            let message = match suggestion {
-                                Some(suggestion) => format!(
-                                    "module '{}' has no function '{}'; did you mean '{}.{}'?",
-                                    alias, member, alias, suggestion
-                                ),
-                                None => format!("module '{}' has no function '{}'", alias, member),
-                            };
-                            self.error(message, Some(callee.span()))
-                        })?;
-
-                    if arguments.len() != function.params.len() {
-                        return Err(self.error(
-                            format!(
-                                "function '{}.{}' expects {} argument(s), but {} were provided",
-                                alias,
-                                member,
-                                function.params.len(),
-                                arguments.len()
+            if let Expr::Identifier(alias, _) = object.as_ref()
+                && let Some(module) = self.find_module(alias)
+            {
+                let function = module
+                    .program
+                    .items
+                    .iter()
+                    .find_map(|item| match item {
+                        Item::Function(function) if function.name == *member => Some(function),
+                        _ => None,
+                    })
+                    .ok_or_else(|| {
+                        let suggestion = closest_name(
+                            member,
+                            module.program.items.iter().filter_map(|item| match item {
+                                Item::Function(function) => Some(function.name.as_str()),
+                                _ => None,
+                            }),
+                        );
+                        let message = match suggestion {
+                            Some(suggestion) => format!(
+                                "module '{}' has no function '{}'; did you mean '{}.{}'?",
+                                alias, member, alias, suggestion
                             ),
-                            Some(callee.span()),
-                        ));
-                    }
+                            None => format!("module '{}' has no function '{}'", alias, member),
+                        };
+                        self.error(message, Some(callee.span()))
+                    })?;
 
-                    for (index, (argument, parameter)) in
-                        arguments.iter().zip(&function.params).enumerate()
-                    {
-                        let actual =
-                            self.type_of_expression(argument, scopes, program, functions)?;
-                        self.ensure_assignable_at(
-                            &parameter.ty,
-                            &actual,
-                            &format!("argument {} of function '{}.{}'", index + 1, alias, member),
-                            argument.span(),
-                        )?;
-                    }
-
-                    return Ok(function.return_type.clone().unwrap_or(Type::Void));
+                if arguments.len() != function.params.len() {
+                    return Err(self.error(
+                        format!(
+                            "function '{}.{}' expects {} argument(s), but {} were provided",
+                            alias,
+                            member,
+                            function.params.len(),
+                            arguments.len()
+                        ),
+                        Some(callee.span()),
+                    ));
                 }
+
+                for (index, (argument, parameter)) in
+                    arguments.iter().zip(&function.params).enumerate()
+                {
+                    let actual = self.type_of_expression(argument, scopes, program, functions)?;
+                    self.ensure_assignable_at(
+                        &parameter.ty,
+                        &actual,
+                        &format!("argument {} of function '{}.{}'", index + 1, alias, member),
+                        argument.span(),
+                    )?;
+                }
+
+                return Ok(function.return_type.clone().unwrap_or(Type::Void));
             }
 
             let object_type = self.type_of_expression(object, scopes, program, functions)?;
@@ -2017,25 +2017,6 @@ impl<'a> Analyzer<'a> {
     }
 }
 
-#[cfg(test)]
-mod expression_id_tests {
-    use super::*;
-
-    #[test]
-    fn expression_ids_are_unique_even_when_source_spans_match() {
-        let analyzer = Analyzer::new(&[]);
-        let span = Span { start: 4, end: 5 };
-        let first = Expr::Number("1".into(), span);
-        let second = Expr::Number("1".into(), span);
-
-        let first_id = analyzer.expression_id(&first);
-        let second_id = analyzer.expression_id(&second);
-
-        assert_ne!(first_id, second_id);
-        assert_eq!(first_id, analyzer.expression_id(&first));
-    }
-}
-
 fn edit_distance(left: &str, right: &str) -> usize {
     let right: Vec<char> = right.chars().collect();
     let mut previous: Vec<usize> = (0..=right.len()).collect();
@@ -2064,4 +2045,23 @@ fn closest_name<'a>(name: &str, candidates: impl Iterator<Item = &'a str>) -> Op
 
     let threshold = (name.chars().count() / 3).max(2);
     (distance <= threshold).then(|| candidate.to_string())
+}
+
+#[cfg(test)]
+mod expression_id_tests {
+    use super::*;
+
+    #[test]
+    fn expression_ids_are_unique_even_when_source_spans_match() {
+        let analyzer = Analyzer::new(&[]);
+        let span = Span { start: 4, end: 5 };
+        let first = Expr::Number("1".into(), span);
+        let second = Expr::Number("1".into(), span);
+
+        let first_id = analyzer.expression_id(&first);
+        let second_id = analyzer.expression_id(&second);
+
+        assert_ne!(first_id, second_id);
+        assert_eq!(first_id, analyzer.expression_id(&first));
+    }
 }

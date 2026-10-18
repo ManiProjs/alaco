@@ -3,7 +3,7 @@ use miette::SourceSpan;
 
 impl From<Span> for SourceSpan {
     fn from(span: Span) -> Self {
-        SourceSpan::new(span.start.into(), (span.end - span.start).into())
+        SourceSpan::new(span.start.into(), span.end - span.start)
     }
 }
 
@@ -24,6 +24,8 @@ pub enum Item {
     Import(Import),
     Struct(Struct),
     Function(Function),
+    // Reserved for future top-level executable statements; the parser currently rejects them.
+    #[allow(dead_code)]
     Statement(Stmt),
 }
 
@@ -146,7 +148,12 @@ pub enum LoopKind {
     Repeat(Expr),
     While(Expr),
 
-    For { variable: String, iterable: Expr },
+    // Retained in the AST/IR model for iterable-loop support, which is not parsed yet.
+    #[allow(dead_code)]
+    For {
+        variable: String,
+        iterable: Expr,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -201,6 +208,8 @@ pub enum Expr {
         span: Span,
     },
 
+    // Intrinsics are currently lowered from function declarations, not parsed as expressions.
+    #[allow(dead_code)]
     Intrinsic {
         name: String,
         arguments: Vec<Expr>,

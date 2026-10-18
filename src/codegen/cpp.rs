@@ -1377,38 +1377,37 @@ static std::string __builtin_http_post(const std::string& url, const std::string
                         | BinaryOp::SubtractAssign
                         | BinaryOp::MultiplyAssign
                         | BinaryOp::DivideAssign
-                ) {
-                    if let IrExprKind::Identifier(name) = &left.kind {
-                        if self.lifetime_variables.contains(name) {
-                            let right = self.ir_expression(right);
-                            let value = if *operator == BinaryOp::Assign {
-                                right
-                            } else {
-                                let base_operator = match operator {
-                                    BinaryOp::AddAssign => "+",
-                                    BinaryOp::SubtractAssign => "-",
-                                    BinaryOp::MultiplyAssign => "*",
-                                    BinaryOp::DivideAssign => "/",
-                                    _ => "=",
-                                };
-                                format!(
-                                    "({}.get() {} {})",
-                                    self.cpp_identifier(name),
-                                    base_operator,
-                                    right
-                                )
+                ) && let IrExprKind::Identifier(name) = &left.kind
+                {
+                    if self.lifetime_variables.contains(name) {
+                        let right = self.ir_expression(right);
+                        let value = if *operator == BinaryOp::Assign {
+                            right
+                        } else {
+                            let base_operator = match operator {
+                                BinaryOp::AddAssign => "+",
+                                BinaryOp::SubtractAssign => "-",
+                                BinaryOp::MultiplyAssign => "*",
+                                BinaryOp::DivideAssign => "/",
+                                _ => "=",
                             };
-                            return format!("{}.set({})", self.cpp_identifier(name), value);
-                        }
-                        return format!(
-                            "(({} = {}), ({} {} {}))",
-                            self.previous_identifier(name),
-                            self.cpp_identifier(name),
-                            self.cpp_identifier(name),
-                            self.binary_operator(*operator),
-                            self.ir_expression(right)
-                        );
+                            format!(
+                                "({}.get() {} {})",
+                                self.cpp_identifier(name),
+                                base_operator,
+                                right
+                            )
+                        };
+                        return format!("{}.set({})", self.cpp_identifier(name), value);
                     }
+                    return format!(
+                        "(({} = {}), ({} {} {}))",
+                        self.previous_identifier(name),
+                        self.cpp_identifier(name),
+                        self.cpp_identifier(name),
+                        self.binary_operator(*operator),
+                        self.ir_expression(right)
+                    );
                 }
                 format!(
                     "({} {} {})",
@@ -1472,17 +1471,17 @@ static std::string __builtin_http_post(const std::string& url, const std::string
         match callee {
             IrCallee::Identifier(name) => self.cpp_identifier(name),
             IrCallee::Member { object, member } => {
-                if let IrCallee::Identifier(alias) = object.as_ref() {
-                    if self.module_aliases.contains(alias) {
-                        if alias == "io" {
-                            return self.cpp_identifier(member);
-                        }
-                        return format!(
-                            "{}::{}",
-                            self.cpp_identifier(alias),
-                            self.cpp_identifier(member)
-                        );
+                if let IrCallee::Identifier(alias) = object.as_ref()
+                    && self.module_aliases.contains(alias)
+                {
+                    if alias == "io" {
+                        return self.cpp_identifier(member);
                     }
+                    return format!(
+                        "{}::{}",
+                        self.cpp_identifier(alias),
+                        self.cpp_identifier(member)
+                    );
                 }
                 format!("{}.{}", self.ir_callee(object), self.cpp_identifier(member))
             }
