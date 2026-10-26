@@ -229,9 +229,54 @@ impl Parser {
     }
 
     fn parse_type(&mut self) -> Result<Type, AlacoError> {
+        if self.matches(&TokenKind::Fn) {
+            self.consume(
+                &TokenKind::LeftParen,
+                "expected '(' after 'fn' in function type",
+            )?;
+            let mut parameters = Vec::new();
+            if !self.check(&TokenKind::RightParen) {
+                loop {
+                    parameters.push(self.parse_type()?);
+                    if !self.matches(&TokenKind::Comma) {
+                        break;
+                    }
+                }
+            }
+            self.consume(
+                &TokenKind::RightParen,
+                "expected ')' after function type parameters",
+            )?;
+            self.consume(
+                &TokenKind::Arrow,
+                "expected '->' and a return type in function type",
+            )?;
+            let return_type = Box::new(self.parse_type()?);
+            return Ok(Type::Function {
+                parameters,
+                return_type,
+            });
+        }
+
+        if self.matches(&TokenKind::LeftParen) {
+            let mut elements = vec![self.parse_type()?];
+            self.consume(&TokenKind::Comma, "expected ',' in tuple type")?;
+            loop {
+                elements.push(self.parse_type()?);
+                if !self.matches(&TokenKind::Comma) {
+                    break;
+                }
+                if self.check(&TokenKind::RightParen) {
+                    break;
+                }
+            }
+            self.consume(&TokenKind::RightParen, "expected ')' after tuple type")?;
+            return Ok(Type::Tuple(elements));
+        }
+
         let name = self.consume_identifier("expected type name")?;
 
-        Ok(match name.as_str() {
+        let base = match name.as_str() {
             // Accept both the language's canonical type names and their
             // lowercase spellings. In particular, `string` must not be
             // treated as a user-defined type and emitted verbatim into C++.
@@ -240,8 +285,22 @@ impl Parser {
             "Bool" | "bool" => Type::Bool,
             "String" | "string" => Type::String,
             "Void" | "void" => Type::Void,
-            _ => Type::Named(name),
-        })
+            _ => Type::Named(name.clone()),
+        };
+
+        if !matches!(base, Type::Named(_)) || !self.matches(&TokenKind::Less) {
+            return Ok(base);
+        }
+
+        let mut arguments = Vec::new();
+        loop {
+            arguments.push(self.parse_type()?);
+            if !self.matches(&TokenKind::Comma) {
+                break;
+            }
+        }
+        self.consume(&TokenKind::Greater, "expected '>' after type arguments")?;
+        Ok(Type::Applied(name, arguments))
     }
 
     fn parse_block(&mut self) -> Result<Block, AlacoError> {

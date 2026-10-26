@@ -251,6 +251,28 @@ impl CppCodegen {
                 requirements.string = true;
             }
 
+            Type::Applied(_, arguments) => {
+                for argument in arguments {
+                    self.scan_type_for_runtime(argument, requirements);
+                }
+            }
+
+            Type::Tuple(elements) => {
+                for element in elements {
+                    self.scan_type_for_runtime(element, requirements);
+                }
+            }
+
+            Type::Function {
+                parameters,
+                return_type,
+            } => {
+                for parameter in parameters {
+                    self.scan_type_for_runtime(parameter, requirements);
+                }
+                self.scan_type_for_runtime(return_type, requirements);
+            }
+
             Type::Shell | Type::ShellResult => {
                 requirements.shell = true;
             }
@@ -482,6 +504,13 @@ impl CppCodegen {
         self.push_line("#include <algorithm>");
         self.push_line("#include <cstdint>");
         self.push_line("#include <cstdlib>");
+        self.push_line("#include <functional>");
+        self.push_line("#include <map>");
+        self.push_line("#include <optional>");
+        self.push_line("#include <set>");
+        self.push_line("#include <tuple>");
+        self.push_line("#include <variant>");
+        self.push_line("#include <vector>");
 
         if requirements.string {
             self.push_line("#include <string>");
@@ -1118,6 +1147,14 @@ static std::string __builtin_http_post(const std::string& url, const std::string
                     "stream << (value.{} ? \"true\" : \"false\");",
                     self.cpp_identifier(&field.name)
                 ));
+            } else if matches!(
+                field.ty,
+                Type::Applied(_, _) | Type::Tuple(_) | Type::Function { .. }
+            ) {
+                // Container/callable types do not have a standard ostream
+                // formatter. Keep generated struct printers valid and avoid
+                // inventing a serialization format for these values.
+                self.push_line("stream << \"<composite>\";");
             } else {
                 self.push_line(&format!(
                     "stream << value.{};",
@@ -1564,6 +1601,42 @@ static std::string __builtin_http_post(const std::string& url, const std::string
             Type::Void => "void".to_string(),
 
             Type::Named(name) => self.cpp_identifier(name),
+            Type::Applied(name, arguments) => {
+                let rendered = arguments
+                    .iter()
+                    .map(|argument| self.type_name(argument))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                match name.as_str() {
+                    "Array" => format!("std::vector<{}>", rendered),
+                    "Set" => format!("std::set<{}>", rendered),
+                    "Map" => format!("std::map<{}>", rendered),
+                    "Option" => format!("std::optional<{}>", rendered),
+                    // Result is represented as a tagged union; the first type is success and second is error.
+                    "Result" => format!("std::variant<{}>", rendered),
+                    _ => self.cpp_identifier(name),
+                }
+            }
+            Type::Tuple(elements) => format!(
+                "std::tuple<{}>",
+                elements
+                    .iter()
+                    .map(|element| self.type_name(element))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            Type::Function {
+                parameters,
+                return_type,
+            } => format!(
+                "std::function<{}({})>",
+                self.type_name(return_type),
+                parameters
+                    .iter()
+                    .map(|parameter| self.type_name(parameter))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
         }
     }
 

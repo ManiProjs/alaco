@@ -37,7 +37,31 @@ let mut total: Int = 0;
 total = total + 1;
 ```
 
-An ordinary `let` binding is immutable and cannot be reassigned. Annotate a binding when you want to make the intended type explicit or inference needs help. The current built-in types are intentionally small; do not assume that unlisted Rust or C++ types, generics, or implicit conversions are supported.
+An ordinary `let` binding is immutable and cannot be reassigned. Annotate a binding when you want to make the intended type explicit or inference needs help. Alaco does not implicitly convert unrelated types; integer values may be widened to `Float` in compatible numeric contexts.
+
+### Composite types
+
+Type annotations support nested parameterized types, heterogeneous tuples, and callable values:
+
+```alaco
+struct AccountSummary {
+    recent_ids: Array<Int>,
+    labels: Map<String, String>,
+    unique_tags: Set<String>,
+    selected_id: Option<Int>,
+    lookup_result: Result<String, Int>,
+    position: (Float, Float),
+    predicate: fn(Int, String) -> Bool,
+}
+
+fn process_ids(ids: Array<Option<Int>>) {
+    // Work with ids here.
+}
+```
+
+The currently recognized type constructors are `Array<T>`, `Set<T>`, `Map<K, V>`, `Option<T>`, and `Result<T, E>`. The compiler checks constructor names, argument counts, nested types, and rejects `Void` in value positions. Tuple types use `(T, U, ...)` and require at least two elements. Function types use `fn(ArgumentType, ...) -> ReturnType`; values with a function type can be called, with argument count and argument types checked at compile time. The native backend represents these types using C++ standard-library containers, `std::optional`, `std::variant`, `std::tuple`, and `std::function`.
+
+These constructors currently provide type annotations and native layout. Alaco does not yet provide generic function or generic struct declarations, collection literals and operations, `Option`/`Result` constructors and pattern matching, or enum/trait declarations. Those need dedicated language semantics before these types can be used as a complete application-level API.
 
 ## Functions
 
@@ -67,7 +91,7 @@ if score >= 10 {
 }
 ```
 
-The implemented binary operators include arithmetic (`+`, `-`, `*`, `/`, `%`), comparisons (`==`, `!=`, `<`, `<=`, `>`, `>=`), logical `and` / `or`, and compound assignments (`+=`, `-=`, `*=`, `/=`). Logical operators require `Bool` operands; `and` binds more tightly than `or`. The unary `!` operator negates a boolean, and unary `-` negates a number. Parentheses can group expressions.
+The implemented binary operators include arithmetic (`+`, `-`, `*`, `/`, `%`), comparisons (`==`, `!=`, `<`, `<=`, `>`, `>=`), logical `and` / `or`, and compound assignments (`+=`, `-=`, `*=`, `/=`). `+=` accepts either compatible numeric operands or two `String` values, matching the behavior of `+`. Logical operators require `Bool` operands; `and` binds more tightly than `or`. The unary `!` operator negates a boolean, and unary `-` negates a number. Parentheses can group expressions.
 
 Equality is defined for `Int`, `Float`, `Bool`, and `String`; comparing structs, shell values, or `Void` is rejected. `%` currently requires two `Int` operands.
 

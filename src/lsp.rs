@@ -1394,6 +1394,35 @@ fn type_name(ty: &Type) -> String {
         Type::ShellResult => "ShellResult".into(),
         Type::Void => "Void".into(),
         Type::Named(name) => name.clone(),
+        Type::Applied(name, arguments) => format!(
+            "{}<{}>",
+            name,
+            arguments
+                .iter()
+                .map(type_name)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Type::Tuple(elements) => format!(
+            "({})",
+            elements
+                .iter()
+                .map(type_name)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Type::Function {
+            parameters,
+            return_type,
+        } => format!(
+            "fn({}) -> {}",
+            parameters
+                .iter()
+                .map(type_name)
+                .collect::<Vec<_>>()
+                .join(", "),
+            type_name(return_type)
+        ),
     }
 }
 fn signature(function: &crate::ast::Function) -> String {

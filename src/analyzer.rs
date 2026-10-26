@@ -292,6 +292,54 @@ impl<'a> Analyzer<'a> {
                     span: span.into(),
                 })
             }
+            Type::Applied(name, arguments) => {
+                let expected = match name.as_str() {
+                    "Array" | "Set" | "Option" => Some(1),
+                    "Map" | "Result" => Some(2),
+                    _ => None,
+                };
+                let Some(expected) = expected else {
+                    return Err(AlacoError::UnknownType {
+                        name: name.clone(),
+                        span: span.into(),
+                    });
+                };
+                if arguments.len() != expected {
+                    return Err(self.error(
+                        format!(
+                            "type '{}' expects {} type argument(s), got {}",
+                            name,
+                            expected,
+                            arguments.len()
+                        ),
+                        Some(span),
+                    ));
+                }
+                for argument in arguments {
+                    self.validate_value_type_at(argument, struct_names, span)?;
+                }
+                Ok(())
+            }
+            Type::Tuple(elements) => {
+                if elements.len() < 2 {
+                    return Err(
+                        self.error("tuple types must contain at least two elements", Some(span))
+                    );
+                }
+                for element in elements {
+                    self.validate_value_type_at(element, struct_names, span)?;
+                }
+                Ok(())
+            }
+            Type::Function {
+                parameters,
+                return_type,
+            } => {
+                for parameter in parameters {
+                    self.validate_value_type_at(parameter, struct_names, span)?;
+                }
+                self.validate_return_type_at(return_type, struct_names, span)
+            }
             _ => Ok(()),
         }
     }
@@ -1451,7 +1499,9 @@ impl<'a> Analyzer<'a> {
         program: &Program,
         functions: &HashMap<String, FunctionInfo>,
     ) -> Result<Type, AlacoError> {
-        if let Expr::Identifier(name, span) = callee {
+        if let Expr::Identifier(name, span) = callee
+            && self.find_variable(scopes, name).is_none()
+        {
             let function = functions.get(name).ok_or_else(|| {
                 let suggestion = self.closest_function_name(name, functions);
                 let message = match suggestion {
@@ -1608,6 +1658,36 @@ impl<'a> Analyzer<'a> {
 
         let callee_type = self.type_of_expression(callee, scopes, program, functions)?;
 
+        if let Type::Function {
+            parameters,
+            return_type,
+        } = &callee_type
+        {
+            if arguments.len() != parameters.len() {
+                return Err(self.error(
+                    format!(
+                        "callable value expects {} argument(s), but {} were provided",
+                        parameters.len(),
+                        arguments.len()
+                    ),
+                    Some(callee.span()),
+                ));
+            }
+
+            for (index, (argument, expected)) in arguments.iter().zip(parameters.iter()).enumerate()
+            {
+                let actual = self.type_of_expression(argument, scopes, program, functions)?;
+                self.ensure_assignable_at(
+                    expected,
+                    &actual,
+                    &format!("argument {} of callable value", index + 1),
+                    argument.span(),
+                )?;
+            }
+
+            return Ok((**return_type).clone());
+        }
+
         Err(self.error(
             format!(
                 "cannot call value of type '{}'",
@@ -1650,7 +1730,12 @@ impl<'a> Analyzer<'a> {
                         | BinaryOp::MultiplyAssign
                         | BinaryOp::DivideAssign
                 ) {
-                    self.require_numeric_pair_at(&left_type, &right_type, span)?;
+                    let string_concatenation = operator == BinaryOp::AddAssign
+                        && left_type == Type::String
+                        && right_type == Type::String;
+                    if !string_concatenation {
+                        self.require_numeric_pair_at(&left_type, &right_type, span)?;
+                    }
                 }
 
                 self.ensure_assignable_at(&left_type, &right_type, "assignment", right.span())?;
@@ -1951,6 +2036,35 @@ impl<'a> Analyzer<'a> {
             Type::ShellResult => "ShellResult".to_string(),
             Type::Void => "Void".to_string(),
             Type::Named(name) => name.clone(),
+            Type::Applied(name, arguments) => format!(
+                "{}<{}>",
+                name,
+                arguments
+                    .iter()
+                    .map(|arg| self.type_name(arg))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            Type::Tuple(elements) => format!(
+                "({})",
+                elements
+                    .iter()
+                    .map(|element| self.type_name(element))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            Type::Function {
+                parameters,
+                return_type,
+            } => format!(
+                "fn({}) -> {}",
+                parameters
+                    .iter()
+                    .map(|parameter| self.type_name(parameter))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                self.type_name(return_type)
+            ),
         }
     }
 

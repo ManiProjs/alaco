@@ -285,6 +285,99 @@ mod tests {
     use super::Compiler;
 
     #[test]
+    fn parameterized_and_tuple_types_are_parsed_checked_and_lowered() {
+        let cpp = Compiler::compile(
+            r#"
+            struct Record {
+                values: Array<Int>,
+                labels: Map<String, String>,
+                maybe_id: Option<Int>,
+                outcome: Result<String, Int>,
+                coordinates: (Float, Float),
+                tags: Set<String>,
+                predicate: fn(Int, String) -> Bool,
+            }
+            fn accept(value: Array<Option<Int>>) {}
+            fn main() {}
+            "#,
+            "parameterized_types.aco",
+        )
+        .expect("nested generic and tuple annotations should be accepted");
+
+        assert!(cpp.contains("std::vector<long long> values;"), "{cpp}");
+        assert!(
+            cpp.contains("std::map<std::string, std::string> labels;"),
+            "{cpp}"
+        );
+        assert!(cpp.contains("std::optional<long long> maybe_id;"), "{cpp}");
+        assert!(
+            cpp.contains("std::variant<std::string, long long> outcome;"),
+            "{cpp}"
+        );
+        assert!(
+            cpp.contains("std::tuple<double, double> coordinates;"),
+            "{cpp}"
+        );
+        assert!(cpp.contains("std::set<std::string> tags;"), "{cpp}");
+        assert!(
+            cpp.contains("std::function<bool(long long, std::string)> predicate;"),
+            "{cpp}"
+        );
+
+        let output_path =
+            std::env::temp_dir().join(format!("alaco_parameterized_types_{}", std::process::id()));
+        Compiler::build(
+            r#"
+            struct Record {
+                values: Array<Int>,
+                labels: Map<String, String>,
+                maybe_id: Option<Int>,
+                outcome: Result<String, Int>,
+                coordinates: (Float, Float),
+                tags: Set<String>,
+                predicate: fn(Int, String) -> Bool,
+            }
+            fn accept(value: Array<Option<Int>>) {}
+            fn main() {}
+            "#,
+            "parameterized_types.aco",
+            &output_path,
+        )
+        .expect("parameterized types should compile to a native executable");
+        let _ = std::fs::remove_file(output_path);
+    }
+
+    #[test]
+    fn parameterized_types_reject_unknown_constructors_and_wrong_arity() {
+        let unknown = Compiler::check(
+            "struct Box { value: Vector<Int> } fn main() {}",
+            "unknown_type_constructor.aco",
+        );
+        assert!(
+            unknown.is_err(),
+            "unknown type constructors must be rejected"
+        );
+
+        let wrong_arity = Compiler::check(
+            "struct Box { value: Map<String> } fn main() {}",
+            "generic_arity.aco",
+        );
+        assert!(
+            wrong_arity.is_err(),
+            "generic constructors must enforce arity"
+        );
+
+        let unknown_argument = Compiler::check(
+            "struct Box { value: Option<Missing> } fn main() {}",
+            "unknown_generic_argument.aco",
+        );
+        assert!(
+            unknown_argument.is_err(),
+            "nested type arguments must be validated"
+        );
+    }
+
+    #[test]
     fn public_io_functions_accept_multiple_value_types() {
         let cpp = Compiler::compile(
             r#"
@@ -1063,6 +1156,54 @@ struct Person {
             mutable_same_type.is_ok(),
             "mutable inferred variables should allow same-type reassignment"
         );
+    }
+
+    #[test]
+    fn function_typed_parameters_are_callable_and_type_checked() {
+        let source = "fn apply(callback: fn(Int) -> Int, value: Int) -> Int { return callback(value); } fn main() {}";
+        let cpp = Compiler::compile(source, "callable_type_test.aco")
+            .expect("a value with a function type should be callable");
+        assert!(cpp.contains("callback(value)"), "{cpp}");
+        let output_path =
+            std::env::temp_dir().join(format!("alaco_callable_type_{}", std::process::id()));
+        Compiler::build(source, "callable_type_test.aco", &output_path)
+            .expect("function-typed calls should compile to native code");
+        let _ = std::fs::remove_file(output_path);
+
+        let wrong_argument = Compiler::check(
+            "fn apply(callback: fn(Int) -> Int) -> Int { return callback(\"wrong\"); } fn main() {}",
+            "callable_argument_type_test.aco",
+        )
+        .expect_err("function-typed values must validate their arguments");
+        assert!(
+            format!("{wrong_argument:?}").contains("argument 1 of callable value"),
+            "the diagnostic should identify the callable argument: {wrong_argument:?}"
+        );
+
+        let wrong_arity = Compiler::check(
+            "fn apply(callback: fn(Int) -> Int) -> Int { return callback(); } fn main() {}",
+            "callable_arity_test.aco",
+        )
+        .expect_err("function-typed values must validate argument counts");
+        assert!(
+            format!("{wrong_arity:?}").contains("expects 1 argument(s), but 0 were provided"),
+            "the diagnostic should identify the arity mismatch: {wrong_arity:?}"
+        );
+    }
+
+    #[test]
+    fn inferred_string_variables_support_string_concatenation_assignment() {
+        let source =
+            "fn main() { let mut message = \"Hello\"; message += \", world\"; println(message); }";
+        let cpp = Compiler::compile(source, "string_add_assign_test.aco")
+            .expect("String += String should match the semantics of String + String");
+        assert!(cpp.contains("message += \", world\""));
+
+        let invalid = Compiler::check(
+            "fn main() { let mut message = \"Hello\"; message += 42; }",
+            "invalid_string_add_assign_test.aco",
+        );
+        assert!(invalid.is_err(), "String += Int must be rejected");
     }
 
     #[test]

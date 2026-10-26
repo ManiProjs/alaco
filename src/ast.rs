@@ -271,4 +271,13 @@ pub enum Type {
     ShellResult,
     Void,
     Named(String),
+    /// A parameterized type such as `Array<Int>` or `Result<User, DbError>`.
+    Applied(String, Vec<Type>),
+    /// A heterogeneous fixed-size product type such as `(Int, String)`.
+    Tuple(Vec<Type>),
+    /// A callable type such as `fn(Int, String) -> Bool`.
+    Function {
+        parameters: Vec<Type>,
+        return_type: Box<Type>,
+    },
 }
