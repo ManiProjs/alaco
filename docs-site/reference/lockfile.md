@@ -1,6 +1,6 @@
 # Lockfile reference
 
-`Alaco.lock` records the resolved dependency set for an Alaco project. The compiler writes it when dependencies are added or resolved. Commit it alongside `Alaco.toml` for repeatable dependency selection across machines.
+`Alaco.lock` records the resolved dependency set for an Alaco project. The compiler writes it when dependencies are resolved during a build. Commit it alongside `Alaco.toml` for repeatable dependency selection across machines.
 
 ## Example
 
@@ -30,7 +30,7 @@ The exact `resolved` path and revision depend on the project and repository. Tre
 
 ## Reproducibility and updates
 
-When a Git dependency has a matching lock entry, Alaco uses the recorded commit rather than silently switching to a newer tag or a moving branch. This keeps ordinary builds repeatable. To intentionally change a resolved version, edit the dependency declaration or remove the relevant package entry from the lockfile, then run `alaco build` or `alaco add` to resolve again. Inspect the new lockfile diff before committing it.
+When a Git dependency has a matching lock entry, Alaco uses the recorded commit rather than silently switching to a newer tag or a moving branch. This keeps ordinary builds repeatable. To intentionally change a resolved version, edit the dependency declaration or remove the relevant package entry from the lockfile, then run `alaco build` to resolve again. Inspect the new lockfile diff before committing it.
 
 Do not hand-edit commit IDs or resolved checkout paths. If the file is malformed, Alaco reports a lockfile error rather than silently treating it as empty. `alaco clean` removes cached Git checkouts; the lockfile itself remains in the project root.
 

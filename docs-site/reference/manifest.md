@@ -26,7 +26,7 @@ colors = { git = "https://github.com/example/colors-alaco.git", version = "^1.2.
 | `package.entry` | No | Relative `.aco` entry point; defaults to `src/main.aco`. |
 | `dependencies` | No | Dependencies keyed by import name. Use a version string for an unsupported registry-style declaration, or an inline table with exactly one `path` or `git` source. |
 
-The entry path must be relative and point to a `.aco` file inside the package. Run `alaco manifest` to validate and inspect the manifest. Use `alaco add` to add local or Git dependencies; Git dependencies are resolved to a commit and recorded in `Alaco.lock`.
+The entry path must be relative and point to a `.aco` file inside the package. Run `alaco manifest` to validate and inspect the manifest. Add or edit dependency declarations directly in the `[dependencies]` table; the current CLI does not provide an `alaco add` command. When a dependency is resolved during a build, Git commit metadata is recorded in `Alaco.lock`.
 
 ## Current package boundaries
 

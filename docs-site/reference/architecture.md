@@ -16,7 +16,7 @@ Validated intermediate representation (IR)
     ↓
 Target code generation
     ├── C++ → system C++ compiler → native executable
-    └── JavaScript ES module (.mjs)</pre>
+    └── JavaScript output (.js)</pre>
 
 ## Front end
 

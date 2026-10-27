@@ -26,8 +26,9 @@ Alaco is a hobby language and an evolving compiler. These limitations are part o
 ## JavaScript backend
 
 - Timed variables and shell expressions are not supported by JavaScript output.
-- Runtime parity with the native C++ target is incomplete; test the generated `.mjs` file under Node.js.
+- Runtime parity with the native C++ target is incomplete; test the generated `.js` file under Node.js.
 - Target-specific support for some standard-library operations may be incomplete.
+- JavaScript `std.http` helpers invoke the external `curl` command synchronously, so transpiled programs that use HTTP require `curl` on `PATH`.
 
 ## Tooling
 

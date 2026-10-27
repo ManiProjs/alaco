@@ -5,7 +5,7 @@ const storedTheme = localStorage.getItem('alaco-theme');
 const preferredTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 const applyTheme = (theme) => {
   document.documentElement.dataset.theme = theme;
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#171816' : '#ffffff');
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#121722' : '#ffffff');
   themeButton?.setAttribute('aria-label', `Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`);
   if (themeButton) themeButton.innerHTML = `${theme === 'dark' ? '☀' : '◐'} <span>${theme === 'dark' ? 'Light' : 'Dark'}</span>`;
 };
@@ -28,6 +28,13 @@ nav?.querySelectorAll('a').forEach((link) => {
     nav.classList.remove('nav-open');
     menuButton?.setAttribute('aria-expanded', 'false');
   });
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && menuButton?.getAttribute('aria-expanded') === 'true') {
+    nav?.classList.remove('nav-open');
+    menuButton.setAttribute('aria-expanded', 'false');
+    menuButton.focus();
+  }
 });
 
 document.querySelector('.copy-command')?.addEventListener('click', async (event) => {

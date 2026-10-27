@@ -2,9 +2,9 @@
 
 Alaco supports local path dependencies and Git-hosted packages. There is no central package registry, so every dependency must name a local directory or a Git repository.
 
-## Add a dependency
+## Declare a dependency
 
-Run `alaco add` from the directory containing your project's `Alaco.toml`.
+The current CLI does not provide an `alaco add` command. Edit the `[dependencies]` table in `Alaco.toml` directly, then build the project to resolve the declared dependency and update `Alaco.lock`.
 
 ### Local package
 
@@ -20,38 +20,43 @@ workspace/
     src/lib.aco
 ```
 
-Add the local package from `app/`:
+Declare the local package in `app/Alaco.toml`:
 
 ```sh
 cd app
-alaco add ../shared
 ```
 
-Alaco adds a relative `path` dependency to `Alaco.toml`. Path dependencies are live: edits in `shared/` are used by the next build. The dependency directory must contain its own valid `Alaco.toml`.
+Add this entry under `[dependencies]` in `app/Alaco.toml`:
+
+```toml
+shared = { path = "../shared", version = "^0.1.0" }
+```
+
+Path dependencies are live: edits in `shared/` are used by the next build. The dependency directory must contain its own valid `Alaco.toml`.
 
 ### Git package
 
-```sh
-alaco add https://github.com/example/utility-alaco.git --version '^1.2.0'
+Add a Git dependency under `[dependencies]` in `Alaco.toml`:
+
+```toml
+utility = { git = "https://github.com/example/utility-alaco.git", version = "^1.2.0" }
 ```
 
 Alaco fetches the repository, selects a matching version tag, checks out the selected commit, and records it in `Alaco.lock`. Automatic version selection recognizes semantic-version tags prefixed with `v`, such as `v1.2.0` and `v1.10.0`. Bare tags like `1.10.0` and tags like `release-1.10.0` are ignored by automatic selection. Versions are compared numerically.
 
 You can instead select a specific Git source:
 
-```sh
-alaco add https://github.com/example/utility-alaco.git --tag v1.2.0
-alaco add https://github.com/example/utility-alaco.git --rev 0123456789abcdef
-alaco add https://github.com/example/utility-alaco.git --branch main
+```toml
+utility_tag = { git = "https://github.com/example/utility-alaco.git", tag = "v1.2.0" }
+utility_rev = { git = "https://github.com/example/utility-alaco.git", rev = "0123456789abcdef" }
+utility_branch = { git = "https://github.com/example/utility-alaco.git", branch = "main" }
 ```
 
 `--tag`, `--rev`, and `--branch` are mutually exclusive. A branch is resolved to a commit and recorded in the lockfile; it is not automatically followed on every build.
 
 Use `--name` to choose the dependency's import name if the inferred name is unsuitable:
 
-```sh
-alaco add https://github.com/example/utility-alaco.git --name utility --version '^1.2.0'
-```
+The dependency key in the manifest is the import name, so use `utility` as the key when the source should be imported as `utility`.
 
 ## Version constraints
 
@@ -84,7 +89,7 @@ This example assumes `src/lib.aco` provides `greet`. The dotted import makes the
 
 ## Lockfile behavior
 
-`Alaco.lock` records resolved dependency metadata and immutable Git commit IDs. Commit the lockfile with your application so builds can reuse the same Git revisions. Once a Git dependency is locked, builds honor that revision even if a newer matching tag appears upstream. To intentionally move to a newer version, update the dependency declaration or remove its existing lock entry and resolve it again; review the resulting diff before committing.
+`Alaco.lock` records resolved dependency metadata and immutable Git commit IDs. Commit the lockfile with your application so builds can reuse the same Git revisions. Once a Git dependency is locked, builds honor that revision even if a newer matching tag appears upstream. To intentionally move to a newer version, update the dependency declaration or remove its existing lock entry and run `alaco build` to resolve it again; review the resulting diff before committing.
 
 Git checkouts are cached under `target/.alaco/packages/`. `alaco clean` removes the project-local build and dependency cache, so a later build may need network access to fetch Git dependencies again. Local path dependencies are not copied into that cache.
 

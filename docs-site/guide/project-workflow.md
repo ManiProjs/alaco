@@ -35,7 +35,7 @@ entry = "src/main.aco"
 [dependencies]
 ```
 
-The package name and semantic version are required. The current supported edition is `2026`. The entry path must be a relative `.aco` path within the package. Add local or Git dependencies with `alaco add`; see the [dependency guide](/guide/dependencies) for package layout and lockfile behavior.
+The package name and semantic version are required. The current supported edition is `2026`. The entry path must be a relative `.aco` path within the package. Declare local or Git dependencies in the `[dependencies]` table; see the [dependency guide](/guide/dependencies) for package layout and lockfile behavior. The current CLI does not provide an `alaco add` command.
 
 ## 3. Use the check-run-build cycle
 
@@ -51,7 +51,7 @@ alaco build src/main.aco
 - `test` discovers and runs `.aco` test programs under `tests/`, or under a supplied file/directory.
 - `clean` removes generated artifacts from the current project's `target/` directory.
 
-Native builds use an incremental cache. Run `alaco build --explain` to inspect cache decisions, or `alaco build --no-cache` to force compilation. See [Incremental builds](/guide/build-cache).
+Native builds compile generated C++ with the system toolchain. `alaco build` does not currently expose `--explain` or `--no-cache` options; if you need to force a clean build, use `alaco clean` before building again. See [Build artifacts and troubleshooting](/guide/build-cache).
 
 Within a project, commands that accept an optional source path use the configured entry point where applicable. Run `alaco --help` for the installed version's full option list.
 

@@ -1,6 +1,6 @@
 # Alaco documentation
 
-Alaco is a small, statically checked programming language implemented in Rust. Its compiler analyzes `.aco` source files and currently supports native executable builds through generated C++ plus an evolving JavaScript ES module target.
+Alaco is a small, statically checked programming language implemented in Rust. Its compiler analyzes `.aco` source files and supports native executable builds through generated C++ plus an evolving JavaScript transpilation target.
 
 <div class="vp-doc-intro-actions">
   <a class="vp-doc-primary" href="./guide/getting-started">Get started <span>→</span></a>
@@ -25,7 +25,7 @@ Alaco is a small, statically checked programming language implemented in Rust. I
 - **Source files:** `.aco`
 - **Compiler implementation:** Rust
 - **Native output:** generated C++ compiled with a system C++ compiler
-- **JavaScript output:** ES modules for Node.js, with an evolving set of supported features
+- **JavaScript output:** generated JavaScript for Node.js, with an evolving set of supported features
 - **Editor tooling:** Language Server Protocol, including diagnostics, completion, hover, navigation, and code actions
 
 Alaco is actively evolving. These pages describe the current implementation, including limitations, rather than promising compatibility with Rust, C++, or a complete language specification.

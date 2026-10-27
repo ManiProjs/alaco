@@ -21,7 +21,7 @@ The check command validates Alaco syntax, names, and types. It does not prove th
 | Argument or assignment type mismatch | Semantic analysis | Compare the expected type with the value's actual type; don't assume implicit conversions. |
 | C++ compiler missing or native build fails | Toolchain/code generation | Run `alaco doctor` and verify that a supported C++ compiler is installed. |
 | Program compiles but fails when run | Runtime | Reduce the input and inspect file paths, environment, timers, shell commands, and other external effects. |
-| JavaScript output behaves differently | JavaScript target | Run the generated `.mjs` with Node.js and check the [target guide](/guide/targets) for incomplete support. |
+| JavaScript output behaves differently | JavaScript target | Run the generated `.js` file with Node.js and check the [target guide](/guide/targets) for incomplete support. |
 
 ## Read source locations
 

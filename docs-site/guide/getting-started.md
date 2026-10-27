@@ -61,11 +61,11 @@ Try changing `println` to `printl`, then run `check` again. The semantic analyze
 With `alaco` installed and the Alaco repository available for its example source, run:
 
 ```sh
-alaco transpile examples/javascript.aco --target js --output hello.mjs
-node hello.mjs
+alaco transpile examples/javascript.aco --output hello.js
+node hello.js
 ```
 
-JavaScript output is an evolving target. Check the [target guide](/guide/targets) before relying on target-specific standard-library behavior.
+The output path is optional; without `--output`, Alaco writes a sibling `.js` file. JavaScript output is an evolving target. Check the [target guide](/guide/targets) before relying on target-specific standard-library behavior.
 
 ## Next steps
 

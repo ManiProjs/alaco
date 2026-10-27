@@ -2,7 +2,7 @@
 
 ## Package manifests
 
-Alaco projects use `Alaco.toml` for package metadata. A minimal manifest has a `[package]` table with `name`, semantic `version`, `edition = "2026"`, and an optional `.aco` `entry` path (default `src/main.aco`). `[dependencies]` can declare local path dependencies or Git dependencies. Use `alaco add` to add one and maintain `Alaco.lock`; Alaco currently has no central package registry. See [Dependencies and packages](/guide/dependencies) and the [manifest reference](/reference/manifest).
+Alaco projects use `Alaco.toml` for package metadata. A minimal manifest has a `[package]` table with `name`, semantic `version`, `edition = "2026"`, and an optional `.aco` `entry` path (default `src/main.aco`). `[dependencies]` can declare local path dependencies or Git dependencies. Add declarations directly to the manifest; the current CLI has no `alaco add` command and Alaco has no central package registry. See [Dependencies and packages](/guide/dependencies) and the [manifest reference](/reference/manifest).
 
 Use `alaco new my_app` to create a project scaffold, or `alaco init` to initialize the current directory. Inside a project, commands without an explicit source path use the configured entry point where applicable. Keep application code under `src/` and reusable local modules beside the source file that imports them, or in matching subdirectories for dotted module paths.
 

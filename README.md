@@ -4,7 +4,7 @@ This is the standalone website branch for [Alaco](https://github.com/ManiProjs/a
 
 - **Landing page:** Vite (`index.html`, `src/`)
 - **Documentation:** VitePress (`docs-site/`)
-- **Style:** white surfaces, no gradients, DM Sans for body text, Syne for headings
+- **Style:** restrained blue accent, no gradients, DM Sans for body text, Syne for headings
 
 ## Local development
 
