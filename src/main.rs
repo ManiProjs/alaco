@@ -17,6 +17,7 @@ mod token;
 
 use std::{
     fs,
+    io::IsTerminal,
     path::{Path, PathBuf},
     process::{Command, ExitCode},
     time::{Duration, Instant},
@@ -108,9 +109,15 @@ enum CommandKind {
 }
 
 fn main() -> ExitCode {
-    let _ = miette::set_hook(Box::new(|_| {
+    let use_color = should_use_color(
+        std::io::stdout().is_terminal(),
+        std::io::stderr().is_terminal(),
+        std::env::var_os("NO_COLOR").is_some_and(|value| !value.is_empty()),
+    );
+    let _ = miette::set_hook(Box::new(move |_| {
         Box::new(
             miette::MietteHandlerOpts::new()
+                .color(use_color)
                 .unicode(true)
                 .terminal_links(true)
                 .build(),
@@ -124,6 +131,54 @@ fn main() -> ExitCode {
             eprintln!("{error:?}");
             ExitCode::FAILURE
         }
+    }
+}
+
+fn should_use_color(stdout_is_terminal: bool, stderr_is_terminal: bool, no_color: bool) -> bool {
+    stdout_is_terminal && stderr_is_terminal && !no_color
+}
+
+fn colors_enabled() -> bool {
+    should_use_color(
+        std::io::stdout().is_terminal(),
+        std::io::stderr().is_terminal(),
+        std::env::var_os("NO_COLOR").is_some_and(|value| !value.is_empty()),
+    )
+}
+
+fn green(value: impl std::fmt::Display) -> String {
+    let text = value.to_string();
+    if colors_enabled() {
+        text.green().to_string()
+    } else {
+        text
+    }
+}
+
+fn red(value: impl std::fmt::Display) -> String {
+    let text = value.to_string();
+    if colors_enabled() {
+        text.red().to_string()
+    } else {
+        text
+    }
+}
+
+fn bold(value: impl std::fmt::Display) -> String {
+    let text = value.to_string();
+    if colors_enabled() {
+        text.bold().to_string()
+    } else {
+        text
+    }
+}
+
+fn dimmed(value: impl std::fmt::Display) -> String {
+    let text = value.to_string();
+    if colors_enabled() {
+        text.dimmed().to_string()
+    } else {
+        text
     }
 }
 
@@ -209,7 +264,7 @@ fn new_project(name: &str) -> Result<ExitCode> {
     }
 
     create_project_files(&root)?;
-    println!("  {} Created project `{name}`", "✓".green());
+    println!("  {} Created project `{name}`", green("✓"));
     println!("\n  Next steps:\n    cd {name}\n    alaco run");
 
     Ok(ExitCode::SUCCESS)
@@ -234,7 +289,7 @@ fn init_project(root: &Path) -> Result<ExitCode> {
     create_project_files(root)?;
     println!(
         "  {} Initialized Alaco project in {}",
-        "✓".green(),
+        green("✓"),
         root.display()
     );
 
@@ -298,15 +353,15 @@ fn doctor() -> Result<ExitCode> {
         Ok(output) if output.status.success() => {
             let version = String::from_utf8_lossy(&output.stdout);
             let first_line = version.lines().next().unwrap_or("clang++ found");
-            println!("  {} C++ compiler: {first_line}", "✓".green());
+            println!("  {} C++ compiler: {first_line}", green("✓"));
         }
         Ok(_) => {
             failed = true;
-            println!("  {} clang++ is installed but failed to run", "✗".red());
+            println!("  {} clang++ is installed but failed to run", red("✗"));
         }
         Err(error) => {
             failed = true;
-            println!("  {} clang++ not found ({error})", "✗".red());
+            println!("  {} clang++ not found ({error})", red("✗"));
             println!("    Install LLVM/Clang and ensure `clang++` is on PATH.");
         }
     }
@@ -316,14 +371,14 @@ fn doctor() -> Result<ExitCode> {
     if stdlib_root.is_dir() {
         println!(
             "  {} Standard library: {}",
-            "✓".green(),
+            green("✓"),
             stdlib_root.display()
         );
     } else {
         failed = true;
         println!(
             "  {} Standard library not found: {}",
-            "✗".red(),
+            red("✗"),
             stdlib_root.display()
         );
     }
@@ -338,7 +393,7 @@ fn doctor() -> Result<ExitCode> {
 fn show_manifest() -> Result<ExitCode> {
     let path = PathBuf::from("Alaco.toml");
     let manifest = crate::manifest::Manifest::load(&path)?;
-    println!("{} {}", manifest.name.bold(), manifest.version);
+    println!("{} {}", bold(&manifest.name), manifest.version);
     println!("  Edition: {}", manifest.edition);
     println!("  Entry:   {}", manifest.entry.display());
     println!("  Target:  {}", manifest.build.target);
@@ -483,7 +538,7 @@ fn add_dependency(git_repo: &str) -> Result<ExitCode> {
         ));
     }
 
-    println!("  {} Added library `{dependency_name}`", "✓".green());
+    println!("  {} Added library `{dependency_name}`", green("✓"));
     println!("    Repository: {git_repo}");
     println!("    Revision:   {revision}");
     println!("    Installed:  {}", destination.display());
@@ -849,7 +904,7 @@ fn test(path: &Path) -> Result<ExitCode> {
         ));
     }
 
-    println!("  {} {} test program(s)", "Testing".bold(), tests.len());
+    println!("  {} {} test program(s)", bold("Testing"), tests.len());
     let started = Instant::now();
     let mut passed = 0usize;
     let mut failed = 0usize;
@@ -881,18 +936,18 @@ fn test(path: &Path) -> Result<ExitCode> {
         match result {
             Ok(true) => {
                 passed += 1;
-                println!("  {} {label}", "PASS".green());
+                println!("  {} {label}", green("PASS"));
             }
             Ok(false) => {
                 failed += 1;
                 println!(
                     "  {} {label} (test program exited unsuccessfully)",
-                    "FAIL".red()
+                    red("FAIL")
                 );
             }
             Err(error) => {
                 failed += 1;
-                println!("  {} {label}", "FAIL".red());
+                println!("  {} {label}", red("FAIL"));
                 eprintln!("    {error:?}");
             }
         }
@@ -964,9 +1019,9 @@ fn clean_target(target: &Path) -> Result<ExitCode> {
                 target.display()
             )
         })?;
-        println!("  {} Removed {}", "✓".green(), target.display());
+        println!("  {} Removed {}", green("✓"), target.display());
     } else {
-        println!("  {} Nothing to clean", "✓".green());
+        println!("  {} Nothing to clean", green("✓"));
     }
     Ok(ExitCode::SUCCESS)
 }
@@ -977,12 +1032,12 @@ fn check(file: &Path) -> Result<ExitCode> {
 
     let start = Instant::now();
 
-    println!("  {} {}", "Checking".bold(), file.display());
+    println!("  {} {}", bold("Checking"), file.display());
 
     Compiler::check(&source, &filename)?;
 
-    println!("  {} Parsed", "✓".green());
-    println!("  {} Analyzed", "✓".green());
+    println!("  {} Parsed", green("✓"));
+    println!("  {} Analyzed", green("✓"));
 
     print_finished(start.elapsed());
 
@@ -1009,7 +1064,7 @@ fn transpile(file: &Path, requested_output: Option<&Path>) -> Result<ExitCode> {
     }
 
     let start = Instant::now();
-    println!("  {} {}", "Transpiling".bold(), file.display());
+    println!("  {} {}", bold("Transpiling"), file.display());
     let javascript = Compiler::transpile_javascript(&source, &filename)?;
     fs::write(&output, javascript).map_err(|error| {
         miette::miette!(
@@ -1017,9 +1072,9 @@ fn transpile(file: &Path, requested_output: Option<&Path>) -> Result<ExitCode> {
             output.display()
         )
     })?;
-    println!("  {} Generated JavaScript", "✓".green());
+    println!("  {} Generated JavaScript", green("✓"));
     print_finished(start.elapsed());
-    println!("  {} {}", "→".dimmed(), output.display());
+    println!("  {} {}", dimmed("→"), output.display());
     Ok(ExitCode::SUCCESS)
 }
 
@@ -1029,7 +1084,7 @@ fn explain(file: &Path) -> Result<ExitCode> {
 
     match Compiler::check(&source, &filename) {
         Ok(()) => {
-            println!("  {} No errors found.", "✓".green());
+            println!("  {} No errors found.", green("✓"));
 
             Ok(ExitCode::SUCCESS)
         }
@@ -1070,20 +1125,20 @@ fn build(file: &Path, requested_output: Option<&Path>) -> Result<ExitCode> {
 
     let start = Instant::now();
 
-    println!("  {} {}", "Building".bold(), file.display());
+    println!("  {} {}", bold("Building"), file.display());
 
-    println!("  {} Compiling", "→".dimmed());
+    println!("  {} Compiling", dimmed("→"));
 
     let config = manifest_for_source(file)?
         .map(|manifest| manifest.build)
         .unwrap_or_default();
     Compiler::build_with_config(&source, &filename, &output, &config)?;
 
-    println!("  {} Built", "✓".green());
+    println!("  {} Built", green("✓"));
 
     print_finished(start.elapsed());
 
-    println!("  {} {}", "→".dimmed(), output.display());
+    println!("  {} {}", dimmed("→"), output.display());
 
     Ok(ExitCode::SUCCESS)
 }
@@ -1108,9 +1163,9 @@ fn run(file: &Path) -> Result<ExitCode> {
 
     let start = Instant::now();
 
-    println!("  {} {}", "Running".bold(), file.display());
+    println!("  {} {}", bold("Running"), file.display());
 
-    println!("  {} Compiling", "→".dimmed());
+    println!("  {} Compiling", dimmed("→"));
 
     let config = manifest_for_source(file)?
         .map(|manifest| manifest.build)
@@ -1120,7 +1175,7 @@ fn run(file: &Path) -> Result<ExitCode> {
         return Err(error);
     }
 
-    println!("  {} Built", "✓".green());
+    println!("  {} Built", green("✓"));
     println!();
 
     let executable = executable_path(&output);
@@ -1238,8 +1293,8 @@ fn print_finished(duration: Duration) {
 
     println!(
         "  {} in {}",
-        "Finished".bold(),
-        format_duration(duration).dimmed()
+        bold("Finished"),
+        dimmed(format_duration(duration))
     );
 }
 
@@ -1260,7 +1315,7 @@ mod tests {
     use super::{
         clean_target, create_project_files, default_output_path, discover_tests, format_duration,
         init_project, insert_dependency, install_git_dependency_tree, pin_git_dependency_revision,
-        temporary_output_path, transpile,
+        should_use_color, temporary_output_path, transpile,
     };
     use std::{fs, path::Path, time::Duration};
 
@@ -1425,6 +1480,14 @@ mod tests {
     fn formats_short_durations_in_milliseconds() {
         assert_eq!(format_duration(Duration::from_micros(250)), "0.25ms");
         assert_eq!(format_duration(Duration::from_millis(42)), "42ms");
+    }
+
+    #[test]
+    fn colors_require_interactive_output_and_respect_no_color() {
+        assert!(should_use_color(true, true, false));
+        assert!(!should_use_color(false, true, false));
+        assert!(!should_use_color(true, false, false));
+        assert!(!should_use_color(true, true, true));
     }
 
     #[test]

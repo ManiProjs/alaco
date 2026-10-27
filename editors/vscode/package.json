@@ -24,7 +24,7 @@
         "alaco.executable": {
           "type": "string",
           "default": "alaco",
-          "description": "Path to the Alaco executable, including its lsp subcommand."
+          "description": "Path to the Alaco executable. The extension adds the lsp subcommand when starting the language server."
         },
         "alaco.languageServer.enabled": {
           "type": "boolean",
@@ -66,11 +66,12 @@
       },
       {
         "command": "alaco.build",
-        "title": "Alaco: Build Current File"
+        "title": "Alaco: Build Project"
       },
       {
         "command": "alaco.run",
-        "title": "Alaco: Run Current File"
+        "title": "Alaco: Run Current File",
+        "icon": "$(play)"
       }
     ],
     "menus": {

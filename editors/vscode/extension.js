@@ -33,10 +33,14 @@ function activate(context) {
     }
     const file = editor.document.uri.fsPath;
     const executable = vscode.workspace.getConfiguration('alaco').get('executable', 'alaco');
-    const cwd = vscode.workspace.getWorkspaceFolder(editor.document.uri)?.uri.fsPath;
-    output.appendLine(`$ ${executable} ${action} ${file}`);
+    const workspaceFolder = vscode.workspace.getWorkspaceFolder(editor.document.uri);
+    const cwd = workspaceFolder?.uri.fsPath;
+    // Project actions should use Alaco.toml's entry point, not whichever file
+    // happens to be active. Keep `check` scoped to the current file.
+    const args = action === 'check' ? [action, file] : [action];
+    output.appendLine(`$ ${executable} ${args.join(' ')}`);
     output.show(true);
-    const child = spawn(executable, [action, file], { cwd, windowsHide: true });
+    const child = spawn(executable, args, { cwd, windowsHide: true });
     child.stdout.on('data', (chunk) => output.append(chunk.toString()));
     child.stderr.on('data', (chunk) => output.append(chunk.toString()));
     child.on('error', (error) => {
