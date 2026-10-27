@@ -1,5 +1,9 @@
-// Lightweight TOML syntax sanity-checking for configuration inputs.
-// The current runtime supports sections and key/value assignments.
+// TOML configuration helpers support a limited subset of TOML 1.0: simple
+// sections, single-line assignments, and string/integer/boolean scalars.
+// Basic single-quoted literal strings are supported; arrays, multiline
+// strings, dates, and array-of-tables are not supported. Keys in sections use
+// dotted names such as "server.port".
+// Accessors cover string, integer, and boolean scalar values.
 fn is_valid(text: String) -> Bool {
     return __builtin_toml_is_valid(text);
 }

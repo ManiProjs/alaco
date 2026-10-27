@@ -1,6 +1,9 @@
-// No external curl executable is spawned. Windows uses WinHTTP, macOS uses
-// CFNetwork, and other Unix-like systems use OpenSSL for HTTPS plus native
-// sockets. Failed requests and non-2xx responses return an empty string.
+// Synchronous HTTP helpers. Native builds use WinHTTP on Windows, CFNetwork
+// on macOS, and sockets/OpenSSL on other Unix-like systems. JavaScript builds
+// invoke curl, which must be installed and available on PATH.
+// Body-only helpers return an empty string for transport failures and non-2xx
+// responses. response/post_json_response return JSON with status, body,
+// success, and error from one request. JSON POST sends application/json.
 fn is_url(url: String) -> Bool {
     return __builtin_http_is_url(url);
 }
@@ -11,4 +14,27 @@ fn get(url: String) -> String {
 
 fn post_json(url: String, body: String) -> String {
     return __builtin_http_post(url, body);
+}
+
+// Return JSON containing status, body, success, and error from one request.
+fn response(url: String) -> String {
+    return __builtin_http_response(url);
+}
+
+fn post_json_response(url: String, body: String) -> String {
+    return __builtin_http_post_response(url, body);
+}
+
+// These helpers issue their own GET request. A status of 0 means that the
+// request could not obtain an HTTP response; 2xx statuses indicate success.
+fn status(url: String) -> Int {
+    return __builtin_http_status(url);
+}
+
+fn is_success(url: String) -> Bool {
+    return __builtin_http_success(url);
+}
+
+fn error(url: String) -> String {
+    return __builtin_http_error(url);
 }

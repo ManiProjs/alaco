@@ -13,6 +13,30 @@ pub struct Manifest {
     pub edition: String,
     pub entry: PathBuf,
     pub dependencies: BTreeMap<String, String>,
+    pub build: BuildConfig,
+}
+
+#[derive(Debug, Clone)]
+pub struct BuildConfig {
+    pub target: String,
+    pub backend: String,
+    pub compiler: String,
+    pub flags: Vec<String>,
+    pub cache: bool,
+    pub source_map: bool,
+}
+
+impl Default for BuildConfig {
+    fn default() -> Self {
+        Self {
+            target: "native".to_owned(),
+            backend: "cpp".to_owned(),
+            compiler: "clang++".to_owned(),
+            flags: Vec::new(),
+            cache: true,
+            source_map: false,
+        }
+    }
 }
 
 impl Manifest {
@@ -123,12 +147,72 @@ impl Manifest {
             }
         }
 
+        let mut build = BuildConfig::default();
+        if let Some(value) = document.get("build") {
+            let table = value
+                .as_table()
+                .ok_or_else(|| miette::miette!("[build] must be a table"))?;
+            if let Some(target) = table.get("target").and_then(toml::Value::as_str) {
+                build.target = target.to_owned();
+            }
+            if let Some(backend) = table.get("backend").and_then(toml::Value::as_str) {
+                build.backend = backend.to_owned();
+            }
+            if let Some(compiler) = table.get("compiler").and_then(toml::Value::as_str) {
+                build.compiler = compiler.to_owned();
+            }
+            if let Some(flags) = table.get("flags") {
+                build.flags = flags
+                    .as_array()
+                    .ok_or_else(|| miette::miette!("[build].flags must be an array of strings"))?
+                    .iter()
+                    .map(|v| {
+                        v.as_str()
+                            .map(str::to_owned)
+                            .ok_or_else(|| miette::miette!("[build].flags entries must be strings"))
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+            }
+            if let Some(cache) = table.get("cache") {
+                build.cache = cache
+                    .as_bool()
+                    .ok_or_else(|| miette::miette!("[build].cache must be a boolean"))?;
+            }
+            if let Some(source_map) = table.get("source-map") {
+                build.source_map = source_map
+                    .as_bool()
+                    .ok_or_else(|| miette::miette!("[build].source-map must be a boolean"))?;
+            }
+        }
+        if build.target != "native"
+            && (build.target.is_empty()
+                || !build
+                    .target
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.')))
+        {
+            return Err(miette::miette!(
+                "invalid build target '{}'; use 'native' or a compiler target triple",
+                build.target
+            ));
+        }
+        if build.backend != "cpp" {
+            return Err(miette::miette!(
+                "unsupported build backend '{}'; currently supported backend is 'cpp'",
+                build.backend
+            ));
+        }
+        if build.compiler.trim().is_empty() {
+            return Err(miette::miette!("[build].compiler must not be empty"));
+        }
+
         Ok(Self {
             name,
             version,
             edition,
             entry,
             dependencies,
+            build,
         })
     }
 }
@@ -174,5 +258,29 @@ mod tests {
             Path::new("Alaco.toml"),
         );
         assert!(invalid_version.is_err());
+    }
+
+    #[test]
+    fn parses_backward_compatible_build_configuration() {
+        let manifest = Manifest::parse("[package]\nname='demo'\nversion='1.0.0'\n[build]\ncompiler='clang++'\nflags=['-O2']\ncache=false\nsource-map=true\n", Path::new("Alaco.toml")).unwrap();
+        assert_eq!(manifest.build.target, "native");
+        assert_eq!(manifest.build.flags, vec!["-O2"]);
+        assert!(!manifest.build.cache);
+        assert!(manifest.build.source_map);
+    }
+
+    #[test]
+    fn rejects_invalid_build_target_values() {
+        let manifest = Manifest::parse(
+            "[package]\nname='demo'\nversion='1.0.0'\n[build]\ntarget=''\n",
+            Path::new("Alaco.toml"),
+        );
+        assert!(manifest.is_err());
+
+        let manifest = Manifest::parse(
+            "[package]\nname='demo'\nversion='1.0.0'\n[build]\ntarget='native; touch bad'\n",
+            Path::new("Alaco.toml"),
+        );
+        assert!(manifest.is_err());
     }
 }

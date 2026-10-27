@@ -333,6 +333,14 @@ fn show_manifest() -> Result<ExitCode> {
     println!("{} {}", manifest.name.bold(), manifest.version);
     println!("  Edition: {}", manifest.edition);
     println!("  Entry:   {}", manifest.entry.display());
+    println!("  Target:  {}", manifest.build.target);
+    println!("  Backend: {}", manifest.build.backend);
+    println!("  Compiler: {}", manifest.build.compiler);
+    println!("  Cache:   {}", manifest.build.cache);
+    println!("  Source map: {}", manifest.build.source_map);
+    if !manifest.build.flags.is_empty() {
+        println!("  Flags:   {}", manifest.build.flags.join(" "));
+    }
     println!("  Dependencies: {}", manifest.dependencies.len());
     for (name, dependency) in &manifest.dependencies {
         println!("    {name} = {dependency}");
@@ -574,7 +582,10 @@ fn build(file: &Path, requested_output: Option<&Path>) -> Result<ExitCode> {
 
     println!("  {} Compiling", "→".dimmed());
 
-    Compiler::build(&source, &filename, &output)?;
+    let config = manifest_for_source(file)?
+        .map(|manifest| manifest.build)
+        .unwrap_or_default();
+    Compiler::build_with_config(&source, &filename, &output, &config)?;
 
     println!("  {} Built", "✓".green());
 
@@ -609,7 +620,10 @@ fn run(file: &Path) -> Result<ExitCode> {
 
     println!("  {} Compiling", "→".dimmed());
 
-    if let Err(error) = Compiler::build(&source, &filename, &output) {
+    let config = manifest_for_source(file)?
+        .map(|manifest| manifest.build)
+        .unwrap_or_default();
+    if let Err(error) = Compiler::build_with_config(&source, &filename, &output, &config) {
         cleanup(&output);
         return Err(error);
     }
@@ -649,6 +663,20 @@ fn read_source(file: &Path) -> Result<String> {
 
     fs::read_to_string(file)
         .map_err(|error| miette::miette!("failed to read '{}': {error}", file.display()))
+}
+
+fn manifest_for_source(file: &Path) -> Result<Option<crate::manifest::Manifest>> {
+    let mut directory = file.parent().unwrap_or_else(|| Path::new("."));
+    loop {
+        let candidate = directory.join("Alaco.toml");
+        if candidate.is_file() {
+            return crate::manifest::Manifest::load(&candidate).map(Some);
+        }
+        let Some(parent) = directory.parent() else {
+            return Ok(None);
+        };
+        directory = parent;
+    }
 }
 
 fn default_output_path(file: &Path) -> PathBuf {

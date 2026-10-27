@@ -470,6 +470,11 @@ impl<'a> Analyzer<'a> {
                     Type::Bool,
                 ),
                 (
+                    "__builtin_json_is_null",
+                    vec![Type::String, Type::String],
+                    Type::Bool,
+                ),
+                (
                     "__builtin_json_get_int",
                     vec![Type::String, Type::String, Type::Int],
                     Type::Int,
@@ -511,6 +516,15 @@ impl<'a> Analyzer<'a> {
                     vec![Type::String, Type::String],
                     Type::String,
                 ),
+                ("__builtin_http_response", vec![Type::String], Type::String),
+                (
+                    "__builtin_http_post_response",
+                    vec![Type::String, Type::String],
+                    Type::String,
+                ),
+                ("__builtin_http_status", vec![Type::String], Type::Int),
+                ("__builtin_http_success", vec![Type::String], Type::Bool),
+                ("__builtin_http_error", vec![Type::String], Type::String),
                 ("__builtin_http_is_url", vec![Type::String], Type::Bool),
                 ("__builtin_time_unix_seconds", vec![], Type::Int),
                 ("__builtin_time_sleep_ms", vec![Type::Int], Type::Void),
@@ -1049,6 +1063,10 @@ impl<'a> Analyzer<'a> {
     // Loops
     // ------------------------------------------------------------
 
+    // Keep the loop's source data and analysis environment explicit here; a
+    // context object would only bundle these short-lived borrows without
+    // reducing the dependencies needed by the analysis.
+    #[allow(clippy::too_many_arguments)]
     fn analyze_loop(
         &self,
         kind: &LoopKind,
@@ -1717,6 +1735,10 @@ impl<'a> Analyzer<'a> {
     // Binary operators
     // ------------------------------------------------------------
 
+    // Binary typing needs both operands plus the current lexical/type-checking
+    // context. Keep these dependencies explicit rather than hiding them in a
+    // broad mutable analyzer context.
+    #[allow(clippy::too_many_arguments)]
     fn type_of_binary(
         &self,
         left: &Expr,

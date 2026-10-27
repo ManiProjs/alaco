@@ -9,13 +9,20 @@ fn escape(text: String) -> String {
 }
 
 fn quote(text: String) -> String {
-    return "\"" + escape(text) + "\"";
+    // Call the intrinsic directly so JavaScript output does not accidentally
+    // resolve the unqualified `escape` name to Node's legacy global function.
+    return "\"" + __builtin_json_escape(text) + "\"";
 }
 
 // Top-level object accessors return the supplied fallback when the key is
 // missing or has a different JSON type.
 fn has_key(text: String, key: String) -> Bool {
     return __builtin_json_has_key(text, key);
+}
+
+// True only when the key exists and its JSON value is null.
+fn is_null(text: String, key: String) -> Bool {
+    return __builtin_json_is_null(text, key);
 }
 
 fn get_string(text: String, key: String, fallback: String) -> String {

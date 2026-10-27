@@ -1,16 +1,19 @@
 import std.toml;
+import std.json;
 
 fn main() {
-    let config = "app_name = \"Alaco\"\nport = 8080\ndebug = true\n";
+    let config = "[server]\napp_name = 'Alaco # 1'\nport = 8080\ndebug = true\nmessage = \"line\\nnext\"\n";
 
     println("Valid TOML subset:");
     println(toml.is_valid(config));
     println("App name:");
-    println(toml.get_string(config, "app_name", "Unnamed"));
+    println(toml.get_string(config, "server.app_name", "Unnamed"));
     println("Port:");
-    println(toml.get_int(config, "port", 3000));
+    println(toml.get_int(config, "server.port", 3000));
     println("Debug mode:");
-    println(toml.get_bool(config, "debug", false));
+    println(toml.get_bool(config, "server.debug", false));
+    println("Escaped string as JSON:");
+    println(json.quote(toml.get_string(config, "server.message", "missing")));
     println("Invalid assignment rejected:");
     println(toml.is_valid("port = not_a_value"));
 }

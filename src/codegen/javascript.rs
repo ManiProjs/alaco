@@ -72,20 +72,27 @@ function __builtin_path_is_absolute(value) { return __alaco_path.isAbsolute(valu
 function __builtin_json_is_valid(text) { try { JSON.parse(text); return true; } catch { return false; } }
 function __builtin_json_escape(text) { return String(text).replace(/[\\"\u0000-\u001f]/g, c => { const map = {'\\':'\\\\','"':'\\"','\b':'\\b','\f':'\\f','\n':'\\n','\r':'\\r','\t':'\\t'}; return map[c] ?? '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'); }); }
 function __alaco_json_value(text, key) { try { const v = JSON.parse(text); return v !== null && typeof v === 'object' && !Array.isArray(v) && Object.prototype.hasOwnProperty.call(v, key) ? v[key] : undefined; } catch { return undefined; } }
-function __builtin_json_has_key(text, key) { return __alaco_json_value(text, key) !== undefined; }
-function __builtin_json_get_int(text, key, fallback) { const v = __alaco_json_value(text, key); return Number.isSafeInteger(v) ? v : fallback; }
+function __builtin_json_has_key(text, key) { try { const v = JSON.parse(text); return v !== null && typeof v === 'object' && !Array.isArray(v) && Object.prototype.hasOwnProperty.call(v, key); } catch { return false; } }
+function __builtin_json_is_null(text, key) { try { const v = JSON.parse(text); return v !== null && typeof v === 'object' && !Array.isArray(v) && Object.prototype.hasOwnProperty.call(v, key) && v[key] === null; } catch { return false; } }
+function __builtin_json_get_int(text, key, fallback) { const v = __alaco_json_value(text, key); return typeof v === 'number' && Number.isSafeInteger(v) ? v : fallback; }
 function __builtin_json_get_bool(text, key, fallback) { const v = __alaco_json_value(text, key); return typeof v === 'boolean' ? v : fallback; }
 function __builtin_json_get_string(text, key, fallback) { const v = __alaco_json_value(text, key); return typeof v === 'string' ? v : fallback; }
-function __alaco_toml(text) { const out = Object.create(null); let section = ''; try { for (const raw of text.split(/\r?\n/)) { let line = '', quoted = false, escaped = false; for (const c of raw) { if (escaped) { line += c; escaped = false; continue; } if (quoted && c === '\\') { line += c; escaped = true; continue; } if (c === '"') quoted = !quoted; if (c === '#' && !quoted) break; line += c; } line = line.trim(); if (!line) continue; if (line.startsWith('[') && line.endsWith(']')) { section = line.slice(1, -1).trim(); if (!section) return null; continue; } const eq = line.indexOf('='); if (eq < 1) return null; const key = line.slice(0, eq).trim(); const rawValue = line.slice(eq + 1).trim(); if (!/^[A-Za-z0-9_-]+$/.test(key) || !rawValue) return null; let value; if (rawValue === 'true' || rawValue === 'false') value = rawValue === 'true'; else if (/^-?\d+$/.test(rawValue)) value = Number(rawValue); else if (rawValue.startsWith('"') && rawValue.endsWith('"')) value = JSON.parse(rawValue); else if (rawValue.startsWith('[') && rawValue.endsWith(']')) value = JSON.parse(rawValue.replace(/\btrue\b/g,'true').replace(/\bfalse\b/g,'false')); else if (/^-?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(rawValue)) value = Number(rawValue); else return null; out[section ? section + '.' + key : key] = value; } return out; } catch { return null; } }
+function __alaco_toml_basic(raw) { if (raw.length < 2 || raw[0] !== '"' || raw.at(-1) !== '"') throw new Error('invalid TOML basic string'); let out = ''; for (let i = 1; i < raw.length - 1; i++) { const c = raw[i]; if (c === '"' || c.charCodeAt(0) < 0x20) throw new Error('invalid TOML basic string'); if (c !== '\\') { out += c; continue; } const e = raw[++i]; const escapes = {'\\':'\\','"':'"','b':'\b','t':'\t','n':'\n','f':'\f','r':'\r'}; if (Object.prototype.hasOwnProperty.call(escapes, e)) { out += escapes[e]; continue; } if (e === 'u' || e === 'U') { const digits = e === 'u' ? 4 : 8, hex = raw.slice(i + 1, i + 1 + digits); if (hex.length !== digits || !/^[0-9a-fA-F]+$/.test(hex)) throw new Error('invalid TOML Unicode escape'); const cp = Number.parseInt(hex, 16); if (cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff)) throw new Error('invalid TOML Unicode code point'); out += String.fromCodePoint(cp); i += digits; continue; } throw new Error('invalid TOML escape'); } return out; }
+function __alaco_toml(text) { const out = Object.create(null); let section = ''; try { for (const raw of text.split(/\r?\n/)) { let line = '', quoted = false, literal = false, escaped = false; for (const c of raw) { if (escaped) { line += c; escaped = false; continue; } if (quoted && c === '\\') { line += c; escaped = true; continue; } if (!literal && c === '"') quoted = !quoted; else if (!quoted && c === '\'') literal = !literal; if (c === '#' && !quoted && !literal) break; line += c; } line = line.trim(); if (!line) continue; if (line.startsWith('[') && line.endsWith(']')) { if (line.startsWith('[[')) return null; section = line.slice(1, -1).trim(); if (!section || section.includes('[') || section.includes(']')) return null; continue; } const eq = line.indexOf('='); if (eq < 1) return null; const key = line.slice(0, eq).trim(); const rawValue = line.slice(eq + 1).trim(); if (!/^[A-Za-z0-9_-]+$/.test(key) || !rawValue) return null; let value; if (rawValue === 'true' || rawValue === 'false') value = rawValue === 'true'; else if (/^-?\d+$/.test(rawValue)) value = Number(rawValue); else if (rawValue.startsWith('"')) value = __alaco_toml_basic(rawValue); else if (rawValue.startsWith("'") && rawValue.endsWith("'") && rawValue.indexOf("'", 1) === rawValue.length - 1) value = rawValue.slice(1, -1); else if (rawValue.startsWith('[')) return null; else if (/^-?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(rawValue)) value = Number(rawValue); else return null; out[section ? section + '.' + key : key] = value; } return out; } catch { return null; } }
 function __builtin_toml_is_valid(text) { return __alaco_toml(text) !== null; }
 function __builtin_toml_has_key(text, key) { const v = __alaco_toml(text); return v !== null && Object.prototype.hasOwnProperty.call(v, key); }
 function __builtin_toml_get_string(text, key, fallback) { const v = __alaco_toml(text)?.[key]; return typeof v === 'string' ? v : fallback; }
 function __builtin_toml_get_int(text, key, fallback) { const v = __alaco_toml(text)?.[key]; return Number.isSafeInteger(v) ? v : fallback; }
 function __builtin_toml_get_bool(text, key, fallback) { const v = __alaco_toml(text)?.[key]; return typeof v === 'boolean' ? v : fallback; }
-function __builtin_http_is_url(url) { return /^https?:\/\//i.test(url); }
-function __alaco_http_request(url, body) { if (!__builtin_http_is_url(url)) return ''; try { const args = ['-fsSL', '--max-time', '15']; if (body !== null) args.push('-X', 'POST', '-H', 'Content-Type: application/json', '--data-binary', body); args.push(url); const result = __alaco_child_process.spawnSync('curl', args, {encoding:'utf8', maxBuffer:16*1024*1024}); return result.status === 0 ? result.stdout : ''; } catch { return ''; } }
-function __builtin_http_get(url) { return __alaco_http_request(url, null); }
-function __builtin_http_post(url, body) { return __alaco_http_request(url, body); }
+function __builtin_http_is_url(url) { try { const u = new URL(url); return (u.protocol === 'http:' || u.protocol === 'https:') && !!u.hostname && !u.username && !u.password; } catch { return false; } }
+function __alaco_http_request(url, body) { if (!__builtin_http_is_url(url)) return {status: 0, body: '', success: false, error: 'invalid URL'}; try { const args = ['-sSL', '--max-time', '15', '-w', '\n%{http_code}']; if (body !== null) args.push('-X', 'POST', '-H', 'Content-Type: application/json', '--data-binary', body); args.push(url); const result = __alaco_child_process.spawnSync('curl', args, {encoding:'utf8', maxBuffer:16*1024*1024}); if (result.error) return {status: 0, body: '', success: false, error: result.error.message}; if (result.status !== 0) return {status: 0, body: '', success: false, error: (result.stderr || 'HTTP transport failed').trim()}; const marker = result.stdout.lastIndexOf('\n'); const status = Number(result.stdout.slice(marker + 1)); const responseBody = marker < 0 ? result.stdout : result.stdout.slice(0, marker); const success = status >= 200 && status < 300; return {status, body: responseBody, success, error: success ? '' : `HTTP status ${status}`}; } catch (e) { return {status: 0, body: '', success: false, error: String(e)}; } }
+function __builtin_http_get(url) { const r = __alaco_http_request(url, null); return r.success ? r.body : ''; }
+function __builtin_http_post(url, body) { const r = __alaco_http_request(url, body); return r.success ? r.body : ''; }
+function __builtin_http_response(url) { return JSON.stringify(__alaco_http_request(url, null)); }
+function __builtin_http_post_response(url, body) { return JSON.stringify(__alaco_http_request(url, body)); }
+function __builtin_http_status(url) { return __alaco_http_request(url, null).status; }
+function __builtin_http_success(url) { return __alaco_http_request(url, null).success; }
+function __builtin_http_error(url) { return __alaco_http_request(url, null).error; }
 function __builtin_time_unix_seconds() { return Math.floor(Date.now() / 1000); }
 function __builtin_time_sleep_ms(ms) { if (ms > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
 "#);
@@ -127,14 +134,14 @@ function __builtin_time_sleep_ms(ms) { if (ms > 0) Atomics.wait(new Int32Array(n
             self.line(&format!("const {} = {{", module.alias));
             self.indent += 1;
             for item in &module_ir.items {
-                if let IrItem::Function(name) = item {
-                    if let Some(function) = module_ir.function(name) {
-                        self.line(&format!(
-                            "{}: {},",
-                            name,
-                            self.function_expression(function)
-                        ));
-                    }
+                if let IrItem::Function(name) = item
+                    && let Some(function) = module_ir.function(name)
+                {
+                    self.line(&format!(
+                        "{}: {},",
+                        name,
+                        self.function_expression(function)
+                    ));
                 }
             }
             self.indent -= 1;
@@ -378,17 +385,16 @@ function __builtin_time_sleep_ms(ms) { if (ms > 0) Atomics.wait(new Int32Array(n
                         | BinaryOp::SubtractAssign
                         | BinaryOp::MultiplyAssign
                         | BinaryOp::DivideAssign
-                ) {
-                    if let IrExprKind::Identifier(n) = &left.kind {
-                        return format!(
-                            "(__alaco_previous[{}] = {}, {} {} {})",
-                            js_string(n),
-                            n,
-                            self.expr(left),
-                            op,
-                            self.expr(right)
-                        );
-                    }
+                ) && let IrExprKind::Identifier(n) = &left.kind
+                {
+                    return format!(
+                        "(__alaco_previous[{}] = {}, {} {} {})",
+                        js_string(n),
+                        n,
+                        self.expr(left),
+                        op,
+                        self.expr(right)
+                    );
                 }
                 format!("({} {} {})", self.expr(left), op, self.expr(right))
             }

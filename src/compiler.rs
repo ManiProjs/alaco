@@ -13,6 +13,7 @@ use crate::{
     codegen::cpp::CppCodegen,
     codegen::javascript::JavaScriptCodegen,
     lexer::Lexer,
+    manifest::BuildConfig,
     parser::Parser,
     stdlib::{LoadedModule, Stdlib},
 };
@@ -55,14 +56,23 @@ impl Compiler {
     }
 
     /// Compile an Alaco source file into C++ source code.
+    #[cfg(test)]
     pub fn compile(source: &str, filename: &str) -> Result<String> {
+        Self::compile_with_source_map(source, filename, false)
+    }
+
+    fn compile_with_source_map(source: &str, filename: &str, source_map: bool) -> Result<String> {
         let unit = Self::parse_unit(source, filename)?;
 
         let ir = Analyzer::new(&unit.modules)
             .analyze(&unit.program)
             .map_err(|error| Self::report(error, filename, source))?;
 
-        let generator = CppCodegen::new();
+        let generator = if source_map {
+            CppCodegen::with_source(filename, source)
+        } else {
+            CppCodegen::new()
+        };
 
         Ok(generator.generate_with_modules(&ir, &unit.modules))
     }
@@ -78,31 +88,97 @@ impl Compiler {
 
     /// Build an Alaco source file into a native executable.
     pub fn build(source: &str, filename: &str, output: &Path) -> Result<()> {
-        let cpp = Self::compile(source, filename)?;
+        Self::build_with_config(source, filename, output, &BuildConfig::default())
+    }
 
-        let cpp_path = output.with_extension("cpp");
+    /// Build with explicit, manifest-controlled compiler options and a content-addressed cache.
+    pub fn build_with_config(
+        source: &str,
+        filename: &str,
+        output: &Path,
+        config: &BuildConfig,
+    ) -> Result<()> {
+        if config.backend != "cpp" {
+            return Err(miette::miette!(
+                "only the C++ backend is currently supported"
+            ));
+        }
+        validate_build_target(&config.target)?;
+        validate_build_flags(&config.flags)?;
+        let cpp = Self::compile_with_source_map(source, filename, config.source_map)?;
+        let compiler_version = Command::new(&config.compiler)
+            .arg("--version")
+            .output()
+            .map_err(|error| {
+                miette::miette!("failed to run C++ compiler '{}': {error}", config.compiler)
+            })?;
+        if !compiler_version.status.success() {
+            return Err(miette::miette!(
+                "C++ compiler '{}' failed to report its version",
+                config.compiler
+            ));
+        }
+        let compiler_identity = format!(
+            "{}\n{}\n{}",
+            resolve_executable(&config.compiler).display(),
+            String::from_utf8_lossy(&compiler_version.stdout),
+            String::from_utf8_lossy(&compiler_version.stderr)
+        );
+        let cache_key = build_cache_key(source, filename, &cpp, config, &compiler_identity);
+        let cache_dir = output
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join(".alaco-cache");
+        let cached_output = cache_dir.join(format!("{cache_key}{}", executable_suffix()));
+        if config.cache && cached_output.is_file() {
+            fs::copy(&cached_output, output).into_diagnostic()?;
+            if config.source_map {
+                fs::write(append_path_suffix(output, ".cpp"), &cpp).into_diagnostic()?;
+                write_source_map(output, filename, &cpp)?;
+            }
+            return Ok(());
+        }
 
+        let cpp_path = if config.source_map {
+            append_path_suffix(output, ".cpp")
+        } else {
+            cache_dir.join(format!("{cache_key}.cpp"))
+        };
+        if let Some(parent) = cpp_path.parent() {
+            fs::create_dir_all(parent).into_diagnostic()?;
+        }
         fs::write(&cpp_path, &cpp).into_diagnostic()?;
 
-        let mut command = Command::new("clang++");
-        command
-            .arg("-std=c++20")
-            .arg(&cpp_path)
-            .arg("-o")
-            .arg(output);
-        #[cfg(target_os = "windows")]
-        command.arg("-lwinhttp");
-        #[cfg(target_os = "macos")]
-        if cpp.contains("<CFNetwork/CFNetwork.h>") {
-            command
-                .arg("-framework")
-                .arg("CoreFoundation")
-                .arg("-framework")
-                .arg("CFNetwork");
+        let mut command = Command::new(&config.compiler);
+        command.arg("-std=c++20").arg(&cpp_path);
+        if config.target != "native" {
+            command.arg(format!("--target={}", config.target));
         }
-        #[cfg(all(unix, not(target_os = "macos")))]
-        if cpp.contains("<openssl/ssl.h>") {
-            command.arg("-lssl").arg("-lcrypto");
+        command.args(&config.flags);
+        command.arg("-o").arg(output);
+        if cpp.contains("static std::string __alaco_http_request(") {
+            match build_target_platform(&config.target) {
+                BuildTargetPlatform::Windows => {
+                    command.arg("-lwinhttp");
+                }
+                BuildTargetPlatform::Apple => {
+                    command
+                        .arg("-framework")
+                        .arg("CoreFoundation")
+                        .arg("-framework")
+                        .arg("CFNetwork");
+                }
+                BuildTargetPlatform::Unix if cpp.contains("<openssl/ssl.h>") => {
+                    command.arg("-lssl").arg("-lcrypto");
+                }
+                BuildTargetPlatform::Unix => {}
+                BuildTargetPlatform::Unknown => {
+                    return Err(miette::miette!(
+                        "the std.http runtime is not configured for target '{}'; supported native HTTP targets are Windows, Apple platforms, and OpenSSL-based Unix targets",
+                        config.target
+                    ));
+                }
+            }
         }
         let result = command
             .stdout(Stdio::inherit())
@@ -110,14 +186,25 @@ impl Compiler {
             .status()
             .into_diagnostic();
 
-        let _ = fs::remove_file(&cpp_path);
-
         let status = result?;
 
         if !status.success() {
             return Err(miette::miette!(
                 "clang++ exited with status {status}. This is surely a bug. Report it to Alaco developers."
             ));
+        }
+
+        if config.cache {
+            fs::create_dir_all(&cache_dir).into_diagnostic()?;
+            let temporary_cache =
+                cached_output.with_extension(format!("tmp-{}", std::process::id()));
+            fs::copy(output, &temporary_cache).into_diagnostic()?;
+            fs::rename(&temporary_cache, &cached_output).into_diagnostic()?;
+        }
+        if !config.source_map {
+            let _ = fs::remove_file(&cpp_path);
+        } else {
+            write_source_map(output, filename, &cpp)?;
         }
 
         Ok(())
@@ -288,12 +375,240 @@ impl Compiler {
     }
 }
 
+fn executable_suffix() -> &'static str {
+    if cfg!(windows) { ".exe" } else { "" }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BuildTargetPlatform {
+    Windows,
+    Apple,
+    Unix,
+    Unknown,
+}
+
+fn build_target_platform(target: &str) -> BuildTargetPlatform {
+    if target == "native" {
+        if cfg!(target_os = "windows") {
+            BuildTargetPlatform::Windows
+        } else if cfg!(target_os = "macos") || cfg!(target_os = "ios") {
+            BuildTargetPlatform::Apple
+        } else if cfg!(unix) {
+            BuildTargetPlatform::Unix
+        } else {
+            BuildTargetPlatform::Unknown
+        }
+    } else if target.contains("windows") {
+        BuildTargetPlatform::Windows
+    } else if target.contains("apple") || target.contains("darwin") {
+        BuildTargetPlatform::Apple
+    } else if [
+        "linux",
+        "freebsd",
+        "netbsd",
+        "openbsd",
+        "dragonfly",
+        "android",
+        "illumos",
+        "solaris",
+    ]
+    .iter()
+    .any(|os| target.contains(os))
+    {
+        BuildTargetPlatform::Unix
+    } else {
+        BuildTargetPlatform::Unknown
+    }
+}
+
+fn resolve_executable(name: &str) -> PathBuf {
+    let requested = Path::new(name);
+    if requested.components().count() > 1 {
+        return fs::canonicalize(requested).unwrap_or_else(|_| requested.to_path_buf());
+    }
+    std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
+        .map(|directory| directory.join(name))
+        .find(|candidate| candidate.is_file())
+        .and_then(|candidate| fs::canonicalize(&candidate).ok())
+        .unwrap_or_else(|| requested.to_path_buf())
+}
+
+fn build_cache_key(
+    source: &str,
+    filename: &str,
+    cpp: &str,
+    config: &BuildConfig,
+    compiler_identity: &str,
+) -> String {
+    // Two independently seeded 64-bit FNV-1a lanes provide a deterministic
+    // 128-bit key without dependencies or std's randomized DefaultHasher.
+    let mut hash_a = 0xcbf29ce484222325u64;
+    let mut hash_b = 0x84222325cbf29ce4u64;
+    let mut feed = |bytes: &[u8]| {
+        for byte in bytes {
+            hash_a ^= u64::from(*byte);
+            hash_a = hash_a.wrapping_mul(0x100000001b3);
+            hash_b ^= u64::from(*byte).wrapping_add(0x9d);
+            hash_b = hash_b.wrapping_mul(0x100000001e7);
+        }
+        hash_a ^= 0xff;
+        hash_a = hash_a.wrapping_mul(0x100000001b3);
+        hash_b ^= 0x7f;
+        hash_b = hash_b.wrapping_mul(0x100000001e7);
+    };
+    feed(env!("CARGO_PKG_VERSION").as_bytes());
+    // Link behavior and cache policy live in this module; include its source
+    // so development builds invalidate cached executables even before the
+    // package version changes.
+    feed(include_bytes!("compiler.rs"));
+    feed(std::env::consts::OS.as_bytes());
+    feed(std::env::consts::ARCH.as_bytes());
+    feed(source.as_bytes());
+    feed(filename.as_bytes());
+    feed(cpp.as_bytes());
+    feed(compiler_identity.as_bytes());
+    feed(config.target.as_bytes());
+    feed(config.backend.as_bytes());
+    for flag in &config.flags {
+        feed(flag.as_bytes());
+    }
+
+    // Hash all Alaco files beneath the source directory and standard library.
+    // This conservative dependency set guarantees imported module changes
+    // invalidate the cache even before precise dependency tracking exists.
+    let mut files = Vec::new();
+    if let Some(parent) = Path::new(filename).parent() {
+        collect_aco_files(parent, &mut files);
+    }
+    collect_aco_files(Stdlib::new().root(), &mut files);
+    files.sort();
+    files.dedup();
+    for path in files {
+        feed(path.to_string_lossy().as_bytes());
+        if let Ok(contents) = fs::read(&path) {
+            feed(&contents);
+        }
+    }
+    format!("{hash_a:016x}{hash_b:016x}")
+}
+
+fn validate_build_target(target: &str) -> Result<()> {
+    if target == "native"
+        || (!target.is_empty()
+            && target
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.')))
+    {
+        Ok(())
+    } else {
+        Err(miette::miette!(
+            "invalid target triple '{target}'; use 'native' or a target triple containing only ASCII letters, digits, '-', '_' and '.'"
+        ))
+    }
+}
+
+fn validate_build_flags(flags: &[String]) -> Result<()> {
+    if flags.iter().any(|flag| {
+        flag == "--target"
+            || flag == "-target"
+            || flag.starts_with("--target=")
+            || flag.starts_with("-target=")
+    }) {
+        return Err(miette::miette!(
+            "set the target triple with [build].target instead of passing --target through [build].flags"
+        ));
+    }
+    Ok(())
+}
+
+fn write_source_map(output: &Path, filename: &str, cpp: &str) -> Result<()> {
+    let cpp_path = append_path_suffix(output, ".cpp");
+    let mut current_source: Option<String> = None;
+    let mut current_source_line = 1usize;
+    let mut mappings = Vec::new();
+    let mut sources = Vec::new();
+
+    for (index, line) in cpp.lines().enumerate() {
+        let Some(rest) = line.trim_start().strip_prefix("#line ") else {
+            if let Some(source) = current_source.as_ref() {
+                mappings.push(serde_json::json!({
+                    "generated_line": index + 1,
+                    "source": source,
+                    "source_line": current_source_line
+                }));
+                current_source_line += 1;
+            }
+            continue;
+        };
+        let Some((line_number, quoted_path)) = rest.split_once(' ') else {
+            continue;
+        };
+        let Ok(line_number) = line_number.parse::<usize>() else {
+            continue;
+        };
+        let Some(path) = quoted_path
+            .strip_prefix('"')
+            .and_then(|value| value.strip_suffix('"'))
+        else {
+            continue;
+        };
+        let Ok(path) = serde_json::from_str::<String>(&format!("\"{path}\"")) else {
+            continue;
+        };
+        current_source = Some(path);
+        current_source_line = line_number;
+        match current_source.as_ref() {
+            Some(source) if !sources.contains(source) => sources.push(source.clone()),
+            _ => {}
+        }
+    }
+
+    let map = serde_json::json!({
+        "version": 1,
+        "file": cpp_path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("output.cpp"),
+        "sources": if sources.is_empty() { vec![filename.to_owned()] } else { sources },
+        "mappings": mappings
+    });
+    fs::write(
+        append_path_suffix(&cpp_path, ".map.json"),
+        serde_json::to_vec_pretty(&map).into_diagnostic()?,
+    )
+    .into_diagnostic()
+}
+
+fn append_path_suffix(path: &Path, suffix: &str) -> PathBuf {
+    let mut value = path.as_os_str().to_os_string();
+    value.push(suffix);
+    PathBuf::from(value)
+}
+
+fn collect_aco_files(root: &Path, files: &mut Vec<PathBuf>) {
+    let Ok(entries) = fs::read_dir(root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_aco_files(&path, files);
+        } else if path.extension().and_then(|ext| ext.to_str()) == Some("aco") {
+            files.push(path);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::analyzer::Analyzer;
     use std::process::Command;
 
-    use super::Compiler;
+    use super::{
+        BuildTargetPlatform, Compiler, append_path_suffix, build_cache_key, build_target_platform,
+        validate_build_flags, validate_build_target, write_source_map,
+    };
+    use crate::manifest::BuildConfig;
 
     #[test]
     fn javascript_backend_executes_standard_library_runtime_helpers() {
@@ -1529,5 +1844,379 @@ struct Person {
 
         assert!(output.status.success());
         assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "false");
+    }
+
+    #[test]
+    fn cache_key_changes_when_source_changes() {
+        let config = BuildConfig::default();
+        let key = build_cache_key(
+            "fn main() {}",
+            "cache_key.aco",
+            "int main() {}",
+            &config,
+            "clang 1",
+        );
+        let changed = build_cache_key(
+            "fn main() { }",
+            "cache_key.aco",
+            "int main() {}",
+            &config,
+            "clang 1",
+        );
+        assert_ne!(key, changed);
+    }
+
+    #[test]
+    fn cache_key_changes_when_target_or_compiler_changes() {
+        let config = BuildConfig::default();
+        let key = build_cache_key(
+            "source",
+            "cache_key.aco",
+            "cpp",
+            &config,
+            "clang identity A",
+        );
+
+        let mut target_config = config.clone();
+        target_config.target = "aarch64-unknown-linux-gnu".to_owned();
+        let target_key = build_cache_key(
+            "source",
+            "cache_key.aco",
+            "cpp",
+            &target_config,
+            "clang identity A",
+        );
+        let compiler_key = build_cache_key(
+            "source",
+            "cache_key.aco",
+            "cpp",
+            &config,
+            "clang identity B",
+        );
+
+        assert_ne!(key, target_key, "target triple must invalidate the cache");
+        assert_ne!(
+            key, compiler_key,
+            "compiler identity/version must invalidate the cache"
+        );
+    }
+
+    #[test]
+    fn cache_key_changes_when_compiler_options_change() {
+        let config = BuildConfig::default();
+        let key = build_cache_key("source", "cache_key.aco", "cpp", &config, "clang identity");
+        let mut changed = config;
+        changed.flags.push("-O2".to_owned());
+        assert_ne!(
+            key,
+            build_cache_key("source", "cache_key.aco", "cpp", &changed, "clang identity")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn build_cache_reuses_the_native_artifact_for_identical_inputs() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root =
+            std::env::temp_dir().join(format!("alaco_cache_hit_test_{}", std::process::id()));
+        std::fs::create_dir_all(&root).expect("create cache test directory");
+        let wrapper = root.join("fake-clang++");
+        let log = root.join("compile.log");
+        let quoted_log = format!("'{}'", log.to_string_lossy().replace('\'', "'\\''"));
+        let script = format!(
+            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then printf 'cache-test compiler 1\\n'; exit 0; fi\nprintf 'compile\\n' >> {quoted_log}\nexec clang++ \"$@\"\n"
+        );
+        std::fs::write(&wrapper, script).expect("write compiler wrapper");
+        let mut permissions = std::fs::metadata(&wrapper)
+            .expect("compiler wrapper metadata")
+            .permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&wrapper, permissions).expect("make compiler wrapper executable");
+
+        let config = BuildConfig {
+            compiler: wrapper.to_string_lossy().into_owned(),
+            cache: true,
+            ..BuildConfig::default()
+        };
+        let source = "fn main() { println(\"cached\"); }";
+        let first_output = root.join("first-output");
+        let second_output = root.join("second-output");
+        Compiler::build_with_config(source, "cache_test.aco", &first_output, &config)
+            .expect("first build should invoke the compiler");
+        assert_eq!(
+            std::fs::read_to_string(&log)
+                .expect("compiler invocation log")
+                .lines()
+                .count(),
+            1
+        );
+
+        Compiler::build_with_config(source, "cache_test.aco", &second_output, &config)
+            .expect("second identical build should use the cache");
+        assert_eq!(
+            std::fs::read_to_string(&log)
+                .expect("compiler invocation log")
+                .lines()
+                .count(),
+            1,
+            "the compiler must not run again for identical inputs"
+        );
+        let run = Command::new(&second_output)
+            .output()
+            .expect("cached executable should run");
+        assert!(run.status.success());
+        assert_eq!(String::from_utf8_lossy(&run.stdout), "cached\n");
+        std::fs::remove_dir_all(root).expect("clean cache test directory");
+    }
+
+    #[test]
+    fn build_target_validation_accepts_native_and_triples_but_rejects_invalid_values() {
+        assert!(validate_build_target("native").is_ok());
+        assert!(validate_build_target("aarch64-unknown-linux-gnu").is_ok());
+        assert!(validate_build_target("").is_err());
+        assert!(validate_build_target("x86_64;touch-bad").is_err());
+    }
+
+    #[test]
+    fn build_flags_cannot_override_the_configured_target() {
+        assert!(validate_build_flags(&["-O2".to_owned()]).is_ok());
+        assert!(validate_build_flags(&["--target".to_owned()]).is_err());
+        assert!(validate_build_flags(&["--target=aarch64-unknown-linux-gnu".to_owned()]).is_err());
+    }
+
+    #[test]
+    fn target_triples_select_their_own_platform_link_libraries() {
+        assert_eq!(
+            build_target_platform("x86_64-pc-windows-msvc"),
+            BuildTargetPlatform::Windows
+        );
+        assert_eq!(
+            build_target_platform("aarch64-apple-darwin"),
+            BuildTargetPlatform::Apple
+        );
+        assert_eq!(
+            build_target_platform("x86_64-unknown-linux-gnu"),
+            BuildTargetPlatform::Unix
+        );
+        assert_eq!(
+            build_target_platform("wasm32-unknown-unknown"),
+            BuildTargetPlatform::Unknown
+        );
+    }
+
+    #[test]
+    fn source_map_tracks_generated_lines_from_cpp_line_directives() {
+        let output = std::env::temp_dir().join(format!("alaco_source_map_{}", std::process::id()));
+        let cpp = "#include <iostream>\n    #line 10 \"src/main.aco\"\nint main() {}\n    #line 3 \"lib/util.aco\"\nvoid helper() {}\n";
+        write_source_map(&output, "src/main.aco", cpp).expect("source map should be written");
+        let map_path = append_path_suffix(&output, ".cpp.map.json");
+        let map: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&map_path).unwrap()).unwrap();
+        let mappings = map["mappings"].as_array().unwrap();
+        assert_eq!(mappings[0]["generated_line"], 3);
+        assert_eq!(mappings[0]["source"], "src/main.aco");
+        assert_eq!(mappings[0]["source_line"], 10);
+        assert_eq!(mappings[1]["generated_line"], 5);
+        assert_eq!(mappings[1]["source"], "lib/util.aco");
+        assert_eq!(mappings[1]["source_line"], 3);
+        let _ = std::fs::remove_file(map_path);
+    }
+
+    #[test]
+    fn source_map_compilation_emits_cpp_line_directives() {
+        let source = "fn main() {\n    println(\"mapped\");\n}";
+        let cpp = super::Compiler::compile_with_source_map(source, "src/main.aco", true)
+            .expect("source-map compilation should succeed");
+        assert!(cpp.contains("#line 2 \"src/main.aco\""), "{cpp}");
+    }
+
+    #[test]
+    fn source_map_build_writes_cpp_and_a_real_sidecar() {
+        let source = "fn main() {\n    println(\"mapped\");\n}";
+        let output = std::env::temp_dir().join(format!(
+            "alaco_source_map_build_{}.project",
+            std::process::id()
+        ));
+        let config = BuildConfig {
+            cache: false,
+            source_map: true,
+            ..BuildConfig::default()
+        };
+        Compiler::build_with_config(source, "src/main.aco", &output, &config)
+            .expect("source-map-enabled native build should succeed");
+
+        let run = std::process::Command::new(&output)
+            .output()
+            .expect("source-map test executable should run");
+        assert!(run.status.success());
+        assert_eq!(String::from_utf8_lossy(&run.stdout), "mapped\n");
+
+        let cpp_path = append_path_suffix(&output, ".cpp");
+        let map_path = append_path_suffix(&cpp_path, ".map.json");
+        let cpp = std::fs::read_to_string(&cpp_path).expect("generated C++ should be retained");
+        assert!(cpp.contains("#line 2 \"src/main.aco\""));
+        let map: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&map_path).expect("source map should exist"))
+                .expect("source map should be valid JSON");
+        let mappings = map["mappings"].as_array().expect("mappings array");
+        assert!(
+            mappings
+                .iter()
+                .any(|entry| { entry["source"] == "src/main.aco" && entry["source_line"] == 2 })
+        );
+
+        let _ = std::fs::remove_file(output);
+        let _ = std::fs::remove_file(cpp_path);
+        let _ = std::fs::remove_file(map_path);
+    }
+
+    #[test]
+    fn json_toml_and_http_response_helpers_work_on_both_backends() {
+        let source = r#"
+            import std.json;
+            import std.toml;
+            import std.http;
+
+            fn main() {
+                let payload = "{\"na\\u006de\":\"caf\\u00e9\",\"nullable\":null}";
+                println(json.has_key(payload, "name"));
+                println(json.get_string(payload, "name", "missing"));
+                println(json.has_key(payload, "nullable"));
+                println(json.is_null(payload, "nullable"));
+                println(json.is_null(payload, "missing"));
+
+                let config = "[server]\nname = 'Alaco # 1'\nport = 8080\nmessage = \"line\\nnext\"";
+                println(toml.is_valid(config));
+                println(toml.get_string(config, "server.name", "fallback"));
+                println(toml.get_int(config, "server.port", 0));
+                println(json.quote(toml.get_string(config, "server.message", "fallback")));
+                let invalid_config = "port = not_a_value";
+                println(toml.has_key(invalid_config, "port"));
+                println(toml.get_int(invalid_config, "port", 3000));
+                println(toml.is_valid("port = nan"));
+
+                println(http.is_url("http://"));
+                println(http.is_url("HTTP://localhost:8080/path#fragment"));
+                println(http.is_url("http://user:password@example.com"));
+                let response = http.response("not-a-url");
+                println(json.get_int(response, "status", -1));
+                println(json.get_bool(response, "success", true));
+                println(json.get_string(response, "error", ""));
+            }
+        "#;
+        let expected = concat!(
+            "true\n",
+            "café\n",
+            "true\n",
+            "true\n",
+            "false\n",
+            "true\n",
+            "Alaco # 1\n",
+            "8080\n",
+            "\"line\\nnext\"\n",
+            "false\n",
+            "3000\n",
+            "false\n",
+            "false\n",
+            "true\n",
+            "false\n",
+            "0\n",
+            "false\n",
+            "invalid URL\n"
+        );
+
+        let native_path =
+            std::env::temp_dir().join(format!("alaco_runtime_api_native_{}", std::process::id()));
+        Compiler::build(source, "runtime_api_regression.aco", &native_path)
+            .expect("native JSON/TOML/HTTP helpers should compile");
+        let native_output = std::process::Command::new(&native_path)
+            .output()
+            .expect("native regression executable should run");
+        let _ = std::fs::remove_file(&native_path);
+        assert!(native_output.status.success());
+        assert_eq!(String::from_utf8_lossy(&native_output.stdout), expected);
+
+        let javascript = Compiler::transpile_javascript(source, "runtime_api_regression.aco")
+            .expect("JavaScript JSON/TOML/HTTP helpers should transpile");
+        let javascript_path =
+            std::env::temp_dir().join(format!("alaco_runtime_api_{}.js", std::process::id()));
+        std::fs::write(&javascript_path, &javascript).expect("write generated JavaScript");
+        let javascript_output = std::process::Command::new("node")
+            .arg(&javascript_path)
+            .output()
+            .expect("Node.js should run the generated JavaScript");
+        let _ = std::fs::remove_file(&javascript_path);
+        assert!(javascript_output.status.success());
+        assert_eq!(
+            String::from_utf8_lossy(&javascript_output.stdout),
+            expected,
+            "generated JavaScript:\n{javascript}"
+        );
+    }
+
+    #[test]
+    fn http_response_preserves_non_success_status_and_decodes_chunked_body() {
+        use std::{
+            io::{Read, Write},
+            net::TcpListener,
+            thread,
+        };
+
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind local HTTP test server");
+        let port = listener.local_addr().expect("local server address").port();
+        let source = format!(
+            r#"
+                import std.http;
+                import std.json;
+                fn main() {{
+                    let response = http.response("http://127.0.0.1:{port}/chunked#fragment");
+                    println(json.get_int(response, "status", -1));
+                    println(json.get_string(response, "body", ""));
+                    println(json.get_bool(response, "success", true));
+                    println(json.get_string(response, "error", ""));
+                }}
+            "#
+        );
+        let output_path =
+            std::env::temp_dir().join(format!("alaco_http_chunked_{}", std::process::id()));
+        Compiler::build(&source, "http_chunked_regression.aco", &output_path)
+            .expect("native HTTP response helper should compile");
+
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept local HTTP request");
+            stream
+                .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                .expect("set local HTTP read timeout");
+            let mut request = Vec::new();
+            let mut buffer = [0u8; 1024];
+            loop {
+                let count = stream.read(&mut buffer).expect("read local HTTP request");
+                if count == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buffer[..count]);
+                if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            assert!(request.starts_with(b"GET /chunked HTTP/1.1\r\n"));
+            stream
+                .write_all(
+                    b"HTTP/1.1 418 I'm a teapot\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n4\r\nnope\r\n0\r\n\r\n",
+                )
+                .expect("write chunked HTTP response");
+        });
+
+        let result = std::process::Command::new(&output_path)
+            .output()
+            .expect("HTTP test executable should run");
+        server.join().expect("local HTTP server should finish");
+        let _ = std::fs::remove_file(output_path);
+        assert!(result.status.success());
+        assert_eq!(
+            String::from_utf8_lossy(&result.stdout),
+            "418\nnope\nfalse\nHTTP status 418\n"
+        );
     }
 }

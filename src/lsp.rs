@@ -1801,8 +1801,10 @@ mod tests {
         let module = root.join("std/std/math.aco");
         std::fs::create_dir_all(module.parent().unwrap()).unwrap();
         std::fs::write(&module, "fn gcd() {}\n").unwrap();
-        let mut server = Server::default();
-        server.root_uri = Some(path_to_uri(&root));
+        let mut server = Server {
+            root_uri: Some(path_to_uri(&root)),
+            ..Server::default()
+        };
         let uri = path_to_uri(&root.join("main.aco"));
         server.documents.insert(
             uri.clone(),
@@ -1827,8 +1829,10 @@ mod tests {
         std::fs::write(&main_path, main_source).unwrap();
         std::fs::write(&helper_path, "fn helper() -> Int { return 7; }\n").unwrap();
 
-        let mut server = Server::default();
-        server.root_uri = Some(path_to_uri(&root));
+        let mut server = Server {
+            root_uri: Some(path_to_uri(&root)),
+            ..Server::default()
+        };
         let main_uri = path_to_uri(&main_path);
         let helper_uri = path_to_uri(&helper_path);
         server.documents.insert(

@@ -400,9 +400,10 @@ impl Parser {
                     field.clone()
                 };
                 bindings.push((field, binding));
-                if self.matches(&TokenKind::Comma) || self.matches(&TokenKind::Semicolon) {
-                    self.skip_newlines();
-                } else if self.matches(&TokenKind::Newline) {
+                if self.matches(&TokenKind::Comma)
+                    || self.matches(&TokenKind::Semicolon)
+                    || self.matches(&TokenKind::Newline)
+                {
                     self.skip_newlines();
                 } else if !self.check(&TokenKind::RightBrace) {
                     return Err(
@@ -753,18 +754,10 @@ impl Parser {
     fn parse_equality(&mut self) -> Result<Expr, AlacoError> {
         let mut expression = self.parse_comparison()?;
 
-        loop {
-            let operator = if let Some(operator) = BinaryOp::from_token(&self.peek().kind) {
-                if matches!(operator, BinaryOp::Equal | BinaryOp::NotEqual) {
-                    self.advance();
-                    operator
-                } else {
-                    break;
-                }
-            } else {
-                break;
-            };
-
+        while let Some(operator) = BinaryOp::from_token(&self.peek().kind)
+            .filter(|operator| matches!(operator, BinaryOp::Equal | BinaryOp::NotEqual))
+        {
+            self.advance();
             let right = self.parse_comparison()?;
             let span = Span {
                 start: expression.span().start,
@@ -785,24 +778,13 @@ impl Parser {
     fn parse_comparison(&mut self) -> Result<Expr, AlacoError> {
         let mut expression = self.parse_term()?;
 
-        loop {
-            let operator = if let Some(operator) = BinaryOp::from_token(&self.peek().kind) {
-                if matches!(
-                    operator,
-                    BinaryOp::Less
-                        | BinaryOp::LessEqual
-                        | BinaryOp::Greater
-                        | BinaryOp::GreaterEqual
-                ) {
-                    self.advance();
-                    operator
-                } else {
-                    break;
-                }
-            } else {
-                break;
-            };
-
+        while let Some(operator) = BinaryOp::from_token(&self.peek().kind).filter(|operator| {
+            matches!(
+                operator,
+                BinaryOp::Less | BinaryOp::LessEqual | BinaryOp::Greater | BinaryOp::GreaterEqual
+            )
+        }) {
+            self.advance();
             let right = self.parse_term()?;
             let span = Span {
                 start: expression.span().start,
@@ -823,18 +805,10 @@ impl Parser {
     fn parse_term(&mut self) -> Result<Expr, AlacoError> {
         let mut expression = self.parse_factor()?;
 
-        loop {
-            let operator = if let Some(operator) = BinaryOp::from_token(&self.peek().kind) {
-                if matches!(operator, BinaryOp::Add | BinaryOp::Subtract) {
-                    self.advance();
-                    operator
-                } else {
-                    break;
-                }
-            } else {
-                break;
-            };
-
+        while let Some(operator) = BinaryOp::from_token(&self.peek().kind)
+            .filter(|operator| matches!(operator, BinaryOp::Add | BinaryOp::Subtract))
+        {
+            self.advance();
             let right = self.parse_factor()?;
             let span = Span {
                 start: expression.span().start,
@@ -855,21 +829,13 @@ impl Parser {
     fn parse_factor(&mut self) -> Result<Expr, AlacoError> {
         let mut expression = self.parse_unary()?;
 
-        loop {
-            let operator = if let Some(operator) = BinaryOp::from_token(&self.peek().kind) {
-                if matches!(
-                    operator,
-                    BinaryOp::Multiply | BinaryOp::Divide | BinaryOp::Modulo
-                ) {
-                    self.advance();
-                    operator
-                } else {
-                    break;
-                }
-            } else {
-                break;
-            };
-
+        while let Some(operator) = BinaryOp::from_token(&self.peek().kind).filter(|operator| {
+            matches!(
+                operator,
+                BinaryOp::Multiply | BinaryOp::Divide | BinaryOp::Modulo
+            )
+        }) {
+            self.advance();
             let right = self.parse_unary()?;
             let span = Span {
                 start: expression.span().start,

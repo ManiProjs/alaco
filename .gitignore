@@ -7,3 +7,6 @@ hello
 editors/vscode/*.vsix
 editors/vscode/out/
 editors/vscode/node_modules/
+
+# Alaco generated caches
+.alaco-cache/

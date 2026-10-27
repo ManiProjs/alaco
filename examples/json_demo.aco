@@ -15,4 +15,11 @@ fn main() {
     println(json.get_bool(payload, "stable", false));
     println("Missing field fallback:");
     println(json.get_string(payload, "missing", "fallback value"));
+
+    let nullable = "{\"present\":null,\"name\":\"caf\\u00e9\"}";
+    println("Present null field:");
+    println(json.has_key(nullable, "present"));
+    println(json.is_null(nullable, "present"));
+    println("Unicode escape:");
+    println(json.get_string(nullable, "name", "unknown"));
 }

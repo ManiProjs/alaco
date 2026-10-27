@@ -1,4 +1,5 @@
 import std.http;
+import std.json;
 
 fn main() {
     let url = "https://example.com/";
@@ -7,15 +8,19 @@ fn main() {
     println(http.is_url(url));
     println("Requesting HTTPS page...");
 
-    let response = http.get(url);
-    if response == "" {
-        println("Request failed or returned an empty body.");
-    } else {
+    let response = http.response(url);
+    println("HTTP status:");
+    println(json.get_int(response, "status", 0));
+    if json.get_bool(response, "success", false) {
+        let body = json.get_string(response, "body", "");
         println("HTTPS request succeeded; response body follows:");
-        println(response);
+        println(body);
+    } else {
+        println("Request failed:");
+        println(json.get_string(response, "error", "unknown HTTP error"));
     }
 
     // JSON POST example (uncomment to send a request to a test endpoint):
-    // let result = http.post_json("https://httpbin.org/post", "{\"hello\":\"Alaco\"}");
-    // println(result);
+    // let result = http.post_json_response("https://httpbin.org/post", "{\"hello\":\"Alaco\"}");
+    // println(json.get_int(result, "status", 0));
 }

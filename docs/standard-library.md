@@ -202,11 +202,12 @@ Import with `import std.json;`.
 | `escape(text: String)` | Escape string contents for use inside a JSON string; it does not add surrounding quotes. |
 | `quote(text: String)` | Escape a string and add JSON double quotes. |
 | `has_key(text: String, key: String)` | Check for a key in a top-level JSON object. |
+| `is_null(text: String, key: String)` | Check whether a present top-level property has the JSON value `null`; a missing key is false. |
 | `get_string(text: String, key: String, fallback: String)` | Read a top-level string property or return the fallback. |
 | `get_int(text: String, key: String, fallback: Int)` | Read a top-level integer property or return the fallback. |
 | `get_bool(text: String, key: String, fallback: Bool)` | Read a top-level boolean property or return the fallback. |
 
-These typed accessors read top-level object properties; they do not expose a dynamic JSON value/map/list type or recursively navigate nested objects. String escape decoding covers common escapes.
+These typed accessors read top-level object properties; they do not expose a dynamic JSON value/map/list type or recursively navigate nested objects. String access decodes JSON escapes, including Unicode escapes and surrogate pairs. `has_key` distinguishes a present `null` from a missing property; use `is_null` to check the value itself.
 
 The helpers are intended for small configuration payloads and straightforward lookups. If a key is nested, or if you need to preserve arbitrary JSON values and types, these accessors are not enough by themselves. `quote` is useful when constructing a JSON string literal; `escape` only escapes the contents and does not add quotes.
 
@@ -216,13 +217,13 @@ Import with `import std.toml;`.
 
 | Function | Behavior and limitations |
 | --- | --- |
-| `is_valid(text: String)` | Validate a limited subset of scalar TOML assignments and section headers. |
-| `has_key(text: String, key: String)` | Check for a top-level key. |
-| `get_string(text: String, key: String, fallback: String)` | Read a top-level quoted string or return the fallback. |
-| `get_int(text: String, key: String, fallback: Int)` | Read a top-level integer or return the fallback. |
-| `get_bool(text: String, key: String, fallback: Bool)` | Read a top-level boolean or return the fallback. |
+| `is_valid(text: String)` | Validate the runtime's limited TOML subset. This is not a TOML 1.0 conformance check. |
+| `has_key(text: String, key: String)` | Check for a supported scalar key; section keys use dotted names such as `server.port`. |
+| `get_string(text: String, key: String, fallback: String)` | Read a supported quoted string or return the fallback. |
+| `get_int(text: String, key: String, fallback: Int)` | Read a supported integer or return the fallback. |
+| `get_bool(text: String, key: String, fallback: Bool)` | Read a boolean or return the fallback. |
 
-This is not a complete TOML 1.0 parser. Accessors currently target top-level scalar keys; table-scoped keys, full arrays/inline tables, dates, and every grammar edge case are not fully supported.
+This is not a complete TOML 1.0 parser. Simple table sections, quote-aware comments, double-quoted strings, and basic single-quoted literal strings are supported. Arrays (including arrays of tables), multiline strings, dates, and other grammar edge cases are not supported by the subset validator. Cross-target behavior should be tested for the exact TOML syntax an application needs.
 
 Treat this module as a convenience for simple scalar settings rather than as a general-purpose TOML implementation. A document accepted by this subset validator should not be taken as proof that every TOML consumer will interpret it identically.
 
@@ -232,13 +233,18 @@ Import with `import std.http;`.
 
 | Function | Behavior and limitations |
 | --- | --- |
-| `is_url(url: String)` | Check whether a URL starts with `http://` or `https://`. |
+| `is_url(url: String)` | Check basic HTTP(S) URL syntax, including a non-empty host and a valid numeric port when supplied. User-info URLs are rejected. |
 | `get(url: String)` | Return the response body for a successful GET request. |
 | `post_json(url: String, body: String)` | POST a body with `Content-Type: application/json` and return the response body. |
+| `response(url: String)` | Perform one GET and return a JSON object with `status`, `body`, `success`, and `error`. |
+| `post_json_response(url: String, body: String)` | Perform one JSON POST and return the same response-object shape. |
+| `status(url: String)` | Return the GET status code, or `0` when no HTTP response was obtained. This issues a separate request. |
+| `is_success(url: String)` | Return whether a separate GET received a 2xx status. |
+| `error(url: String)` | Return the error for a separate GET; empty means no reported error. |
 
-For native builds, no `curl` executable is spawned: Windows uses WinHTTP, macOS uses CFNetwork, and other Unix-like builds use OpenSSL 1.1.0+ for TLS with native sockets for transport. The OpenSSL development headers and libraries must be installed when compiling an HTTP-using program on those Unix-like systems. HTTPS certificate and hostname verification are enabled. For JavaScript output, the synchronous HTTP helpers use the `curl` executable because the current Alaco API is synchronous while Node.js networking APIs are asynchronous. Failed requests and non-2xx responses return an empty string, so an empty response cannot be distinguished from a failure. The API does not expose status codes or response headers.
+For native builds, no `curl` executable is spawned: Windows uses WinHTTP, macOS uses CFNetwork, and other Unix-like builds use OpenSSL 1.1.0+ for TLS with native sockets for transport. The Unix socket implementation supports bracketed IPv6 authorities, preserves an explicit port in the `Host` header, removes URL fragments from the request target, and decodes `Transfer-Encoding: chunked` bodies. It does not expose response headers or chunk trailers, does not decode other transfer codings, and does not follow redirects; redirect behavior on other native platforms is transport-specific. The OpenSSL development headers and libraries must be installed when compiling an HTTP-using program on those Unix-like systems. For JavaScript output, the synchronous HTTP helpers use the `curl` executable, which must be installed and available on `PATH`. The body-only `get` and `post_json` helpers return an empty string on failure or non-2xx status, so they cannot distinguish those cases from a successful empty body. Prefer `response` or `post_json_response` when status and error information matters. The response functions return JSON text rather than a typed response structure; use `std.json` accessors to inspect its top-level `status`, `body`, `success`, and `error` fields. The separate `status`/`is_success`/`error` helpers each perform their own GET request and should not be used when one consistent response is required.
 
-Use `is_url` only as a lightweight scheme check, not as complete URL validation. Do not send secrets to untrusted endpoints. Since the API does not expose status codes or headers and uses an empty string for failure, it is best suited to simple requests where that limitation is acceptable.
+Use `is_url` only as a lightweight URL check, not a guarantee that the host is reachable. Do not send secrets to untrusted endpoints. The API does not yet expose response headers or support asynchronous requests.
 
 Runnable examples: `examples/http_demo.aco`, `examples/json_demo.aco`, `examples/toml_demo.aco`, and `examples/type_safety.aco`.
 
@@ -255,7 +261,7 @@ Runnable examples: `examples/http_demo.aco`, `examples/json_demo.aco`, `examples
 | Manipulate path strings | `std.path` | Host platform path semantics apply |
 | Validate/read simple JSON | `std.json` | Typed accessors read top-level keys only |
 | Read simple TOML settings | `std.toml` | Supports a limited subset, not full TOML 1.0 |
-| Basic HTTP GET / JSON POST | `std.http` | No status/header API; failures may look like empty bodies |
+| HTTP GET / JSON POST | `std.http` | Structured JSON response text is available; no headers or async API |
 | Timestamp and sleep | `std.timing` | Whole-second timestamp and millisecond sleep |
 
 ## `std.timing` — basic time utilities
