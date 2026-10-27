@@ -145,18 +145,31 @@ jobs:
           ~/.alaco/stdlib/std (or %USERPROFILE%\.alaco\stdlib\std on Windows).
           EOF
           tar -czf "release-assets/${package}.tar.gz" -C "$package" std INSTALL.txt
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Package VS Code extension
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          cd editors/vscode
+          npm ci
+          npx --yes @vscode/vsce package --out "../../release-assets/alaco-language-${version}.vsix"
       - name: Generate checksums and AlacoUp manifest
         shell: bash
         run: |
           set -euo pipefail
           cd release-assets
-          sha256sum *.tar.gz > SHA256SUMS
+          sha256sum *.tar.gz *.vsix > SHA256SUMS
           python3 ../scripts/generate-release-manifest.py
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           name: Alaco ${{ github.ref_name }}
           prerelease: ${{ contains(github.ref_name, '-') }}
-          generate_release_notes: true
+          body_path: RELEASE_NOTES.md
+          generate_release_notes: false
           fail_on_unmatched_files: true
           files: release-assets/*
