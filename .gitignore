@@ -10,3 +10,4 @@ editors/vscode/node_modules/
 
 # Alaco generated caches
 .alaco-cache/
+/.alaco/

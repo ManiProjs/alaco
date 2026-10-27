@@ -234,7 +234,7 @@ See the [standard-library reference](standard-library.md) for available modules 
 - `import helpers as util;` gives the module a local alias.
 - `import hello from helpers;` imports one named function without the module prefix.
 
-Imports are resolved relative to the source file containing the import, not necessarily the shell's current directory. Imported modules are loaded before their dependents. Cyclic imports and duplicate module aliases are errors. Named imports currently select a single function per statement; package dependency declarations do not yet download packages or change this local import behavior.
+Local imports are resolved relative to the source file containing the import, not necessarily the shell's current directory. Imports whose first component names a dependency in `Alaco.toml` resolve from that installed package. Imported modules are loaded before their dependents. Cyclic imports and duplicate module aliases are errors. Named imports currently select a single function per statement.
 
 ### String interpolation
 
@@ -263,7 +263,7 @@ fn main() {
 
 ## Package manifests
 
-Alaco projects use `Alaco.toml` for package metadata. A minimal manifest has a `[package]` table with `name`, semantic `version`, `edition = "2026"`, and an optional `.aco` `entry` path (default `src/main.aco`). `[dependencies]` accepts version strings and inline tables with `path` or `version` fields. Run `alaco manifest` to validate and print this metadata. Dependency downloading and dependency-aware import resolution are not implemented yet; local imports remain relative to the importing file.
+Alaco projects use `Alaco.toml` for package metadata. A minimal manifest has a `[package]` table with `name`, semantic `version`, `edition = "2026"`, and an optional `.aco` `entry` path (default `src/main.aco`). `[dependencies]` accepts Git tables (`git` and an optional pinned `rev`) and local `path` tables. Run `alaco add <git-repo>` to install a library and recursively install its dependencies, pinning each Git dependency to a commit SHA in its parent package's manifest. Import libraries with `import package_name;` or `import package_name.module;`. There is no registry, and cyclic dependency graphs are rejected.
 
 Use `alaco new my_app` to create a project scaffold, or `alaco init` to initialize the current directory. Inside a project, commands without an explicit source path use the configured entry point where applicable. Keep application code under `src/` and reusable local modules beside the source file that imports them, or in matching subdirectories for dotted module paths.
 

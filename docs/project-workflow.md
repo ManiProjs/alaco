@@ -35,9 +35,28 @@ entry = "src/main.aco"
 [dependencies]
 ```
 
-The package name and semantic version are required. The current supported edition is `2026`. The entry path must be a relative `.aco` path within the package. Dependency declarations can be parsed and displayed, but package fetching and dependency-based import resolution are not implemented yet.
+The package name and semantic version are required. The current supported edition is `2026`. The entry path must be a relative `.aco` path within the package.
 
-## 3. Use the check-run-build cycle
+## 3. Add a library from Git
+
+From the project root, run:
+
+```sh
+alaco add https://github.com/example/geometry-alaco.git
+```
+
+The repository must contain a valid `Alaco.toml`. Alaco clones it into `.alaco/packages/<name>`, reads its package name, and adds a Git dependency pinned to the current commit in your project's `Alaco.toml`:
+
+```toml
+[dependencies]
+geometry = { git = "https://github.com/example/geometry-alaco.git", rev = "<commit-hash>" }
+```
+
+The package can then be imported by its dependency name. `import geometry;` loads the dependency's configured `entry` file (library authors should set `entry = "src/lib.aco"`). `import geometry.shapes;` loads `shapes.aco` from the package root, or `src/shapes.aco` when the root-level module is absent. Hyphens in package names are converted to underscores for import names. Alaco uses Git directly; there is no package registry. Running `alaco add` recursively installs Git and local-path dependencies declared by each library. Git dependencies are pinned to the resolved commit SHA in each package's manifest. Cyclic dependency graphs are rejected. Version-only declarations without a Git or path source are not fetchable and produce an error.
+
+To refresh a dependency to a newer commit, remove its manifest entry and installed `.alaco/packages/<name>` directory, then run `alaco add <git-repository>` again.
+
+## 4. Use the check-run-build cycle
 
 ```sh
 alaco check src/main.aco
@@ -53,7 +72,7 @@ alaco build src/main.aco
 
 Within a project, commands that accept an optional source path use the configured entry point where applicable. Run `alaco --help` for the installed version's full option list.
 
-## 4. Organize local modules
+## 5. Organize local modules
 
 Imports are resolved relative to the file containing the import:
 
@@ -67,9 +86,9 @@ src/
 
 From `src/main.aco`, `import helpers;` resolves to `src/helpers.aco`, while `import helpers.greetings;` resolves to `src/helpers/greetings.aco`. A module can be renamed with `as`, or one function can be brought into the current namespace with `import hello from helpers;`.
 
-Keep the source files consistent with the import paths. Dotted imports require matching directories and `.aco` files; declaring a dependency in `Alaco.toml` does not make an external package importable yet. Cyclic imports and duplicate aliases are reported as errors.
+Keep the source files consistent with the import paths. Dotted imports require matching directories and `.aco` files. Cyclic imports and duplicate aliases are reported as errors.
 
-## 5. Read diagnostics
+## 6. Read diagnostics
 
 The compiler's semantic diagnostics use `alaco::analysis::*` codes and, where possible, highlight the source expression or declaration responsible for the problem. Typical errors include unknown functions, incorrect argument types, unknown types, duplicate declarations, invalid struct fields, and missing entry points.
 
@@ -81,7 +100,7 @@ alaco check examples/a_file_with_error.aco
 
 This file intentionally calls `printl` instead of a known output function. The command should fail; that failure demonstrates the name-analysis diagnostic rather than a broken test setup.
 
-## 6. Run examples and tests safely
+## 7. Run examples and tests safely
 
 The [`examples/`](../examples/README.md) catalog describes the supplied programs. Most are standalone demonstrations, but some have external effects:
 

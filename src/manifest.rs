@@ -12,8 +12,35 @@ pub struct Manifest {
     pub version: String,
     pub edition: String,
     pub entry: PathBuf,
-    pub dependencies: BTreeMap<String, String>,
+    pub dependencies: BTreeMap<String, DependencySpec>,
     pub build: BuildConfig,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DependencySpec {
+    pub version: Option<String>,
+    pub path: Option<String>,
+    pub git: Option<String>,
+    pub rev: Option<String>,
+}
+
+impl DependencySpec {
+    pub fn display_description(&self) -> String {
+        if let Some(git) = &self.git {
+            let mut description = format!("git = {}", toml::Value::String(git.clone()));
+            if let Some(rev) = &self.rev {
+                description.push_str(&format!(", rev = {}", toml::Value::String(rev.clone())));
+            }
+            format!("{{ {description} }}")
+        } else if let Some(path) = &self.path {
+            format!("{{ path = {} }}", toml::Value::String(path.clone()))
+        } else {
+            self.version
+                .as_ref()
+                .map(|version| toml::Value::String(version.clone()).to_string())
+                .unwrap_or_default()
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -47,7 +74,7 @@ impl Manifest {
         Self::parse(&source, path)
     }
 
-    fn parse(source: &str, path: &Path) -> Result<Self> {
+    pub(crate) fn parse(source: &str, path: &Path) -> Result<Self> {
         let document: toml::Value = toml::from_str(source).map_err(|error| {
             miette::miette!("invalid package manifest '{}': {error}", path.display())
         })?;
@@ -124,26 +151,48 @@ impl Manifest {
                         "invalid dependency name '{dependency_name}'"
                     ));
                 }
-                let description = if let Some(version) = declaration.as_str() {
-                    version.to_owned()
+                let spec = if let Some(version) = declaration.as_str() {
+                    DependencySpec {
+                        version: Some(version.to_owned()),
+                        ..DependencySpec::default()
+                    }
                 } else if let Some(table) = declaration.as_table() {
                     let local_path = table.get("path").and_then(toml::Value::as_str);
                     let version = table.get("version").and_then(toml::Value::as_str);
-                    if let Some(local_path) = local_path {
-                        format!("path = \"{local_path}\"")
-                    } else if let Some(version) = version {
-                        version.to_owned()
-                    } else {
+                    let git = table.get("git").and_then(toml::Value::as_str);
+                    let rev = table.get("rev").and_then(toml::Value::as_str);
+                    if local_path.is_none() && version.is_none() && git.is_none() {
                         return Err(miette::miette!(
-                            "dependency '{dependency_name}' must specify a version string or a 'path'/'version' field"
+                            "dependency '{dependency_name}' must specify a version string or a 'git', 'path', or 'version' field"
                         ));
+                    }
+                    if git.is_some() && local_path.is_some() {
+                        return Err(miette::miette!(
+                            "dependency '{dependency_name}' cannot specify both 'git' and 'path'"
+                        ));
+                    }
+                    if git.is_some_and(|value| value.trim().is_empty()) {
+                        return Err(miette::miette!(
+                            "dependency '{dependency_name}' has an empty Git URL"
+                        ));
+                    }
+                    if rev.is_some() && git.is_none() {
+                        return Err(miette::miette!(
+                            "dependency '{dependency_name}' specifies 'rev' without a 'git' URL"
+                        ));
+                    }
+                    DependencySpec {
+                        version: version.map(str::to_owned),
+                        path: local_path.map(str::to_owned),
+                        git: git.map(str::to_owned),
+                        rev: rev.map(str::to_owned),
                     }
                 } else {
                     return Err(miette::miette!(
                         "dependency '{dependency_name}' must be a version string or an inline table"
                     ));
                 };
-                dependencies.insert(dependency_name.clone(), description);
+                dependencies.insert(dependency_name.clone(), spec);
             }
         }
 
@@ -241,8 +290,30 @@ mod tests {
         assert_eq!(manifest.version, "1.2.3");
         assert_eq!(manifest.entry, Path::new("app/main.aco"));
         assert_eq!(manifest.dependencies.len(), 2);
-        assert_eq!(manifest.dependencies["colors"], "^1.0");
-        assert_eq!(manifest.dependencies["local"], "path = \"../local\"");
+        assert_eq!(
+            manifest.dependencies["colors"].version.as_deref(),
+            Some("^1.0")
+        );
+        assert_eq!(
+            manifest.dependencies["local"].path.as_deref(),
+            Some("../local")
+        );
+    }
+
+    #[test]
+    fn parses_git_dependency_and_revision() {
+        let manifest = Manifest::parse(
+            "[package]\nname='demo'\nversion='1.0.0'\n[dependencies]\nhelper={ git='https://example.com/helper.git', rev='abc123' }\n",
+            Path::new("Alaco.toml"),
+        ).unwrap();
+        assert_eq!(
+            manifest.dependencies["helper"].git.as_deref(),
+            Some("https://example.com/helper.git")
+        );
+        assert_eq!(
+            manifest.dependencies["helper"].rev.as_deref(),
+            Some("abc123")
+        );
     }
 
     #[test]

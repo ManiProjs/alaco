@@ -97,6 +97,12 @@ enum CommandKind {
     /// Validate and display the current package manifest.
     Manifest,
 
+    /// Add a library from a Git repository and record it in Alaco.toml.
+    Add {
+        /// Git repository URL (HTTPS or SSH).
+        git_repo: String,
+    },
+
     /// Start the Alaco Language Server Protocol (LSP) server over stdio.
     Lsp,
 }
@@ -150,6 +156,8 @@ fn run_cli() -> Result<ExitCode> {
         Some(CommandKind::Doctor) => doctor(),
 
         Some(CommandKind::Manifest) => show_manifest(),
+
+        Some(CommandKind::Add { git_repo }) => add_dependency(&git_repo),
 
         Some(CommandKind::Lsp) => lsp::run()
             .map(|()| ExitCode::SUCCESS)
@@ -264,7 +272,7 @@ fn create_project_files(root: &Path) -> Result<()> {
     )
     .map_err(|error| miette::miette!("failed to write project entry point: {error}"))?;
 
-    write_if_missing(&root.join(".gitignore"), "/target/\n")?;
+    write_if_missing(&root.join(".gitignore"), "/target/\n/.alaco/\n")?;
     write_if_missing(
         &root.join("README.md"),
         "# Alaco project\n\nRun the program with `alaco run`.\n\nCheck it with `alaco check`, or build it with `alaco build`.\n",
@@ -343,9 +351,493 @@ fn show_manifest() -> Result<ExitCode> {
     }
     println!("  Dependencies: {}", manifest.dependencies.len());
     for (name, dependency) in &manifest.dependencies {
-        println!("    {name} = {dependency}");
+        println!("    {name} = {}", dependency.display_description());
     }
     Ok(ExitCode::SUCCESS)
+}
+
+fn add_dependency(git_repo: &str) -> Result<ExitCode> {
+    if git_repo.trim().is_empty() || git_repo.chars().any(char::is_control) {
+        return Err(miette::miette!("provide a valid Git repository URL"));
+    }
+
+    let manifest_path = PathBuf::from("Alaco.toml");
+    let manifest = crate::manifest::Manifest::load(&manifest_path)?;
+    let root = std::env::current_dir()
+        .map_err(|error| miette::miette!("cannot determine current directory: {error}"))?;
+    let package_dir = root.join(".alaco").join("packages");
+    fs::create_dir_all(&package_dir).map_err(|error| {
+        miette::miette!(
+            "failed to create package directory '{}': {error}",
+            package_dir.display()
+        )
+    })?;
+
+    let temporary = package_dir.join(format!(".alaco-add-{}", std::process::id()));
+    if temporary.exists() {
+        fs::remove_dir_all(&temporary).map_err(|error| {
+            miette::miette!("failed to clear temporary package directory: {error}")
+        })?;
+    }
+
+    let clone = Command::new("git")
+        .arg("clone")
+        .arg("--quiet")
+        .arg("--")
+        .arg(git_repo)
+        .arg(&temporary)
+        .status()
+        .map_err(|error| miette::miette!("failed to run Git; install Git and retry: {error}"))?;
+    if !clone.success() {
+        let _ = fs::remove_dir_all(&temporary);
+        return Err(miette::miette!("Git clone failed for '{git_repo}'"));
+    }
+
+    let package_manifest_path = temporary.join("Alaco.toml");
+    let package_manifest = match crate::manifest::Manifest::load(&package_manifest_path) {
+        Ok(manifest) => manifest,
+        Err(error) => {
+            let _ = fs::remove_dir_all(&temporary);
+            return Err(miette::miette!(
+                "repository '{git_repo}' is not an Alaco package: {error}"
+            ));
+        }
+    };
+    let dependency_name = package_manifest.name.replace('-', "_");
+    if dependency_name == "std"
+        || !dependency_name
+            .chars()
+            .next()
+            .is_some_and(|character| character.is_ascii_alphabetic() || character == '_')
+        || !dependency_name
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || character == '_')
+    {
+        let _ = fs::remove_dir_all(&temporary);
+        return Err(miette::miette!(
+            "package name '{}' cannot be used as an Alaco import name",
+            package_manifest.name
+        ));
+    }
+    if manifest
+        .dependencies
+        .keys()
+        .any(|name| name.replace('-', "_") == dependency_name)
+    {
+        let _ = fs::remove_dir_all(&temporary);
+        return Err(miette::miette!(
+            "dependency '{dependency_name}' is already declared in Alaco.toml"
+        ));
+    }
+
+    let revision_output = Command::new("git")
+        .arg("-C")
+        .arg(&temporary)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .map_err(|error| miette::miette!("failed to read cloned Git revision: {error}"))?;
+    if !revision_output.status.success() {
+        let _ = fs::remove_dir_all(&temporary);
+        return Err(miette::miette!(
+            "could not determine the Git revision for '{git_repo}'"
+        ));
+    }
+    let revision = String::from_utf8_lossy(&revision_output.stdout)
+        .trim()
+        .to_owned();
+
+    if let Err(error) =
+        install_git_dependency_tree(&temporary, &mut vec![format!("git:{git_repo}")])
+    {
+        let _ = fs::remove_dir_all(&temporary);
+        return Err(error);
+    }
+
+    let destination = package_dir.join(&dependency_name);
+    if destination.exists() {
+        let _ = fs::remove_dir_all(&temporary);
+        return Err(miette::miette!(
+            "package directory '{}' already exists; remove it or choose a different dependency name",
+            destination.display()
+        ));
+    }
+
+    let source = fs::read_to_string(&manifest_path)
+        .map_err(|error| miette::miette!("cannot read '{}': {error}", manifest_path.display()))?;
+    let git_value = toml::Value::String(git_repo.to_owned());
+    let rev_value = toml::Value::String(revision.clone());
+    let declaration = format!("{dependency_name} = {{ git = {git_value}, rev = {rev_value} }}");
+    let updated = insert_dependency(&source, &declaration);
+
+    fs::rename(&temporary, &destination).map_err(|error| {
+        miette::miette!(
+            "failed to install package into '{}': {error}",
+            destination.display()
+        )
+    })?;
+    if let Err(error) = fs::write(&manifest_path, updated) {
+        let _ = fs::remove_dir_all(&destination);
+        return Err(miette::miette!(
+            "failed to update '{}': {error}",
+            manifest_path.display()
+        ));
+    }
+
+    println!("  {} Added library `{dependency_name}`", "✓".green());
+    println!("    Repository: {git_repo}");
+    println!("    Revision:   {revision}");
+    println!("    Installed:  {}", destination.display());
+    println!(
+        "\n  Import it in your source with `import {dependency_name};` or `import {dependency_name}.module;`."
+    );
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Install every Git and local-path dependency of a package, recursively.
+/// Git dependencies are checked out at their declared revision (when present)
+/// and the parent manifest is pinned to the resolved commit SHA.
+fn install_git_dependency_tree(package_root: &Path, active: &mut Vec<String>) -> Result<()> {
+    if active.len() > 128 {
+        return Err(miette::miette!(
+            "package dependency graph exceeds 128 nested packages; check for a dependency cycle or unexpectedly deep graph"
+        ));
+    }
+    let manifest_path = package_root.join("Alaco.toml");
+    let manifest = crate::manifest::Manifest::load(&manifest_path)?;
+    let mut manifest_source = fs::read_to_string(&manifest_path)
+        .map_err(|error| miette::miette!("cannot read '{}': {error}", manifest_path.display()))?;
+    let package_dir = package_root.join(".alaco").join("packages");
+
+    for (dependency_name, spec) in &manifest.dependencies {
+        if let Some(local_path) = &spec.path {
+            let path = package_root
+                .join(local_path)
+                .canonicalize()
+                .map_err(|error| {
+                    miette::miette!(
+                        "cannot resolve local dependency '{dependency_name}' from '{}': {error}",
+                        package_root.display()
+                    )
+                })?;
+            let identity = format!("path:{}", path.display());
+            if active.contains(&identity) {
+                return Err(miette::miette!(
+                    "cyclic package dependency detected: {} -> {dependency_name}",
+                    active
+                        .iter()
+                        .map(|item| item
+                            .trim_start_matches("git:")
+                            .trim_start_matches("path:")
+                            .to_owned())
+                        .collect::<Vec<_>>()
+                        .join(" -> ")
+                ));
+            }
+            active.push(identity);
+            let result = install_git_dependency_tree(&path, active);
+            active.pop();
+            result?;
+            continue;
+        }
+
+        let Some(repository) = &spec.git else {
+            return Err(miette::miette!(
+                "dependency '{dependency_name}' in '{}' has no Git or path source; Alaco has no package registry, so use `alaco add <git-repository>` or a `path` declaration",
+                manifest_path.display()
+            ));
+        };
+        let identity = format!("git:{repository}");
+        if active.contains(&identity) {
+            return Err(miette::miette!(
+                "cyclic Git package dependency detected: {} -> {repository}",
+                active
+                    .iter()
+                    .map(|item| item
+                        .trim_start_matches("git:")
+                        .trim_start_matches("path:")
+                        .to_owned())
+                    .collect::<Vec<_>>()
+                    .join(" -> ")
+            ));
+        }
+
+        let install_name = dependency_name.replace('-', "_");
+        if install_name == "std"
+            || !install_name
+                .chars()
+                .next()
+                .is_some_and(|ch| ch.is_ascii_alphabetic() || ch == '_')
+            || !install_name
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+        {
+            return Err(miette::miette!(
+                "dependency name '{dependency_name}' cannot be used as an Alaco import name"
+            ));
+        }
+        fs::create_dir_all(&package_dir).map_err(|error| {
+            miette::miette!(
+                "failed to create package directory '{}': {error}",
+                package_dir.display()
+            )
+        })?;
+        let destination = package_dir.join(&install_name);
+        if destination.exists() {
+            return Err(miette::miette!(
+                "dependency '{dependency_name}' is already present at '{}'; remove that installed package and retry",
+                destination.display()
+            ));
+        }
+        let temporary = package_dir.join(format!(
+            ".alaco-dep-{}-{}",
+            std::process::id(),
+            install_name
+        ));
+        if temporary.exists() {
+            fs::remove_dir_all(&temporary).map_err(|error| {
+                miette::miette!("failed to clear temporary dependency directory: {error}")
+            })?;
+        }
+        let clone = Command::new("git")
+            .arg("clone")
+            .arg("--quiet")
+            .arg("--")
+            .arg(repository)
+            .arg(&temporary)
+            .status()
+            .map_err(|error| {
+                miette::miette!("failed to run Git; install Git and retry: {error}")
+            })?;
+        if !clone.success() {
+            let _ = fs::remove_dir_all(&temporary);
+            return Err(miette::miette!(
+                "Git clone failed for dependency '{dependency_name}' from '{repository}'"
+            ));
+        }
+
+        if let Some(rev) = &spec.rev {
+            let checkout = Command::new("git")
+                .arg("-C")
+                .arg(&temporary)
+                .args(["checkout", "--quiet", "--detach", rev])
+                .status()
+                .map_err(|error| {
+                    miette::miette!("failed to run Git checkout for '{dependency_name}': {error}")
+                })?;
+            if !checkout.success() {
+                let fetch = Command::new("git")
+                    .arg("-C")
+                    .arg(&temporary)
+                    .args(["fetch", "--quiet", "origin", rev])
+                    .status()
+                    .map_err(|error| {
+                        miette::miette!(
+                            "failed to fetch Git revision '{rev}' for '{dependency_name}': {error}"
+                        )
+                    })?;
+                if !fetch.success() {
+                    let _ = fs::remove_dir_all(&temporary);
+                    return Err(miette::miette!(
+                        "Git revision '{rev}' for dependency '{dependency_name}' was not found or could not be fetched"
+                    ));
+                }
+                let checkout = Command::new("git")
+                    .arg("-C")
+                    .arg(&temporary)
+                    .args(["checkout", "--quiet", "--detach", "FETCH_HEAD"])
+                    .status()
+                    .map_err(|error| miette::miette!("failed to check out fetched Git revision for '{dependency_name}': {error}"))?;
+                if !checkout.success() {
+                    let _ = fs::remove_dir_all(&temporary);
+                    return Err(miette::miette!(
+                        "could not check out Git revision '{rev}' for dependency '{dependency_name}'"
+                    ));
+                }
+            }
+        }
+
+        let child_manifest = match crate::manifest::Manifest::load(&temporary.join("Alaco.toml")) {
+            Ok(manifest) => manifest,
+            Err(error) => {
+                let _ = fs::remove_dir_all(&temporary);
+                return Err(miette::miette!(
+                    "repository '{repository}' for dependency '{dependency_name}' is not an Alaco package: {error}"
+                ));
+            }
+        };
+        let actual_name = child_manifest.name.replace('-', "_");
+        if actual_name != install_name {
+            let _ = fs::remove_dir_all(&temporary);
+            return Err(miette::miette!(
+                "dependency '{dependency_name}' points to package '{}'; dependency key and package name must match after hyphen normalization",
+                child_manifest.name
+            ));
+        }
+        let revision_output = Command::new("git")
+            .arg("-C")
+            .arg(&temporary)
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .map_err(|error| {
+                miette::miette!("failed to read Git revision for '{dependency_name}': {error}")
+            })?;
+        if !revision_output.status.success() {
+            let _ = fs::remove_dir_all(&temporary);
+            return Err(miette::miette!(
+                "could not determine the Git revision for dependency '{dependency_name}'"
+            ));
+        }
+        let revision = String::from_utf8_lossy(&revision_output.stdout)
+            .trim()
+            .to_owned();
+        manifest_source =
+            pin_git_dependency_revision(&manifest_source, dependency_name, &revision)?;
+
+        fs::rename(&temporary, &destination).map_err(|error| {
+            let _ = fs::remove_dir_all(&temporary);
+            miette::miette!(
+                "failed to install dependency '{dependency_name}' into '{}': {error}",
+                destination.display()
+            )
+        })?;
+        active.push(identity);
+        let child_result = install_git_dependency_tree(&destination, active);
+        active.pop();
+        child_result?;
+    }
+
+    fs::write(&manifest_path, manifest_source).map_err(|error| {
+        miette::miette!(
+            "failed to pin dependency revisions in '{}': {error}",
+            manifest_path.display()
+        )
+    })?;
+    Ok(())
+}
+
+fn pin_git_dependency_revision(
+    source: &str,
+    dependency_name: &str,
+    revision: &str,
+) -> Result<String> {
+    let lines = source.lines().collect::<Vec<_>>();
+    let mut in_dependencies = false;
+    let mut output = lines
+        .iter()
+        .map(|line| (*line).to_owned())
+        .collect::<Vec<_>>();
+    let revision_value = toml::Value::String(revision.to_owned()).to_string();
+    for (index, line) in lines.iter().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            in_dependencies = trimmed == "[dependencies]";
+            continue;
+        }
+        if !in_dependencies || !trimmed.starts_with(dependency_name) {
+            continue;
+        }
+        let Some((key, value)) = trimmed.split_once('=') else {
+            continue;
+        };
+        if key.trim() != dependency_name || !value.contains('{') {
+            continue;
+        }
+        let open = line.find('{').expect("checked above");
+        let close = line.rfind('}').ok_or_else(|| miette::miette!("dependency '{dependency_name}' must use a single-line inline table so Alaco can pin its Git revision"))?;
+        if close < open {
+            return Err(miette::miette!(
+                "invalid inline dependency table for '{dependency_name}'"
+            ));
+        }
+        let table = &line[open + 1..close];
+        let rev_assignment = table.match_indices("rev").find_map(|(rev_index, _)| {
+            let before = table[..rev_index].trim_end();
+            if !before.is_empty() && !before.ends_with(',') {
+                return None;
+            }
+            let mut equal = rev_index + 3;
+            while table
+                .as_bytes()
+                .get(equal)
+                .is_some_and(u8::is_ascii_whitespace)
+            {
+                equal += 1;
+            }
+            (table.as_bytes().get(equal) == Some(&b'=')).then_some((rev_index, equal + 1))
+        });
+        if let Some((_, mut value_start)) = rev_assignment {
+            while table
+                .as_bytes()
+                .get(value_start)
+                .is_some_and(u8::is_ascii_whitespace)
+            {
+                value_start += 1;
+            }
+            let rest = &table[value_start..];
+            let value_end = rest.find(',').unwrap_or(rest.len());
+            let updated_table = format!(
+                "{}{}{}",
+                &table[..value_start],
+                revision_value,
+                &rest[value_end..]
+            );
+            output[index] = format!(
+                "{}{{{}}}{}",
+                &line[..open],
+                updated_table,
+                &line[close + 1..]
+            );
+            return Ok(output.join("\n") + "\n");
+        }
+        let updated_table = format!("{}, rev = {}", table.trim_end(), revision_value);
+        output[index] = format!(
+            "{}{{{}}}{}",
+            &line[..open],
+            updated_table,
+            &line[close + 1..]
+        );
+        return Ok(output.join("\n") + "\n");
+    }
+    Err(miette::miette!(
+        "dependency '{dependency_name}' was not found in [dependencies] while pinning its Git revision"
+    ))
+}
+
+fn insert_dependency(source: &str, declaration: &str) -> String {
+    let lines = source.lines().collect::<Vec<_>>();
+    let mut section_start = None;
+    let mut section_end = lines.len();
+    for (index, line) in lines.iter().enumerate() {
+        let trimmed = line.trim();
+        if trimmed == "[dependencies]" {
+            section_start = Some(index);
+            section_end = lines.len();
+        } else if section_start.is_some() && trimmed.starts_with('[') && trimmed.ends_with(']') {
+            section_end = index;
+            break;
+        }
+    }
+
+    let mut output = lines
+        .iter()
+        .map(|line| (*line).to_owned())
+        .collect::<Vec<_>>();
+    if let Some(start) = section_start {
+        let mut end = section_end;
+        while end > start + 1 && lines[end - 1].trim().is_empty() {
+            end -= 1;
+        }
+        output.insert(end, declaration.to_owned());
+    } else {
+        if !source.is_empty() && !source.ends_with('\n') {
+            output.push(String::new());
+        }
+        output.push("[dependencies]".to_owned());
+        output.push(declaration.to_owned());
+    }
+    let mut result = output.join("\n");
+    result.push('\n');
+    result
 }
 
 fn test(path: &Path) -> Result<ExitCode> {
@@ -767,9 +1259,167 @@ fn format_duration(duration: Duration) -> String {
 mod tests {
     use super::{
         clean_target, create_project_files, default_output_path, discover_tests, format_duration,
-        init_project, temporary_output_path, transpile,
+        init_project, insert_dependency, install_git_dependency_tree, pin_git_dependency_revision,
+        temporary_output_path, transpile,
     };
     use std::{fs, path::Path, time::Duration};
+
+    #[test]
+    fn dependency_insertion_preserves_existing_manifest_sections() {
+        let original = "[package]\nname='demo'\nversion='1.0.0'\n\n[dependencies]\n# existing dependency\nlocal={ path='../local' }\n\n[build]\ncache=true\n";
+        let updated = insert_dependency(
+            original,
+            "geometry = { git = \"https://example.com/geometry.git\", rev = \"abc123\" }",
+        );
+        assert!(updated.contains("# existing dependency\nlocal={ path='../local' }\ngeometry = { git = \"https://example.com/geometry.git\", rev = \"abc123\" }\n\n[build]"));
+        assert!(crate::manifest::Manifest::parse(&updated, Path::new("Alaco.toml")).is_ok());
+    }
+
+    #[test]
+    fn dependency_insertion_creates_a_missing_dependencies_table() {
+        let updated = insert_dependency(
+            "[package]\nname='demo'\nversion='1.0.0'\n",
+            "geometry = { git = \"https://example.com/geometry.git\", rev = \"abc123\" }",
+        );
+        assert!(updated.contains("[dependencies]\ngeometry = { git = \"https://example.com/geometry.git\", rev = \"abc123\" }"));
+        assert!(crate::manifest::Manifest::parse(&updated, Path::new("Alaco.toml")).is_ok());
+    }
+
+    #[test]
+    fn recursive_git_dependencies_are_installed_and_pinned() {
+        let root = test_directory("recursive-dependencies");
+        let app = root.join("app");
+        let middle = root.join("middle");
+        let leaf = root.join("leaf");
+        for directory in [&app, &middle, &leaf] {
+            fs::create_dir_all(directory.join("src")).unwrap();
+        }
+        fs::write(
+            leaf.join("Alaco.toml"),
+            "[package]\nname='leaf'\nversion='1.0.0'\nentry='src/lib.aco'\n",
+        )
+        .unwrap();
+        fs::write(
+            leaf.join("src/lib.aco"),
+            "fn answer() -> Int { return 42; }\n",
+        )
+        .unwrap();
+        init_test_git_repo(&leaf);
+
+        let leaf_url = leaf.to_string_lossy();
+        fs::write(
+            middle.join("Alaco.toml"),
+            format!("[package]\nname='middle'\nversion='1.0.0'\nentry='src/lib.aco'\n\n[dependencies]\nleaf = {{ git = {leaf_url:?} }}\n"),
+        ).unwrap();
+        fs::write(
+            middle.join("src/lib.aco"),
+            "import leaf; fn get() -> Int { return leaf.answer(); }\n",
+        )
+        .unwrap();
+        init_test_git_repo(&middle);
+
+        let middle_url = middle.to_string_lossy();
+        fs::write(
+            app.join("Alaco.toml"),
+            format!("[package]\nname='app'\nversion='1.0.0'\nentry='src/main.aco'\n\n[dependencies]\nmiddle = {{ git = {middle_url:?} }}\n"),
+        ).unwrap();
+        fs::write(
+            app.join("src/main.aco"),
+            "import middle; fn main() { println(middle.get()); }\n",
+        )
+        .unwrap();
+
+        install_git_dependency_tree(&app, &mut Vec::new()).unwrap();
+
+        let installed_middle = app.join(".alaco/packages/middle");
+        let installed_leaf = installed_middle.join(".alaco/packages/leaf");
+        assert!(installed_leaf.join("Alaco.toml").is_file());
+        let app_manifest = fs::read_to_string(app.join("Alaco.toml")).unwrap();
+        let middle_manifest = fs::read_to_string(installed_middle.join("Alaco.toml")).unwrap();
+        assert!(app_manifest.contains(&format!("rev = \"{}\"", git_head(&installed_middle))));
+        assert!(middle_manifest.contains(&format!("rev = \"{}\"", git_head(&installed_leaf))));
+
+        let source = fs::read_to_string(app.join("src/main.aco")).unwrap();
+        let generated = crate::compiler::Compiler::compile(
+            &source,
+            &app.join("src/main.aco").to_string_lossy(),
+        )
+        .expect("transitive library imports should compile");
+        assert!(generated.contains("leaf::answer()"), "{generated}");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn recursive_git_dependencies_reject_cycles() {
+        let root = test_directory("dependency-cycle");
+        let app = root.join("app");
+        let alpha = root.join("alpha");
+        let beta = root.join("beta");
+        for directory in [&app, &alpha, &beta] {
+            fs::create_dir_all(directory.join("src")).unwrap();
+        }
+        fs::write(
+            app.join("Alaco.toml"),
+            "[package]\nname='app'\nversion='1.0.0'\n",
+        )
+        .unwrap();
+        let alpha_url = alpha.to_string_lossy();
+        let beta_url = beta.to_string_lossy();
+        fs::write(alpha.join("Alaco.toml"), format!("[package]\nname='alpha'\nversion='1.0.0'\n\n[dependencies]\nbeta = {{ git = {beta_url:?} }}\n")).unwrap();
+        fs::write(beta.join("Alaco.toml"), format!("[package]\nname='beta'\nversion='1.0.0'\n\n[dependencies]\nalpha = {{ git = {alpha_url:?} }}\n")).unwrap();
+        init_test_git_repo(&alpha);
+        init_test_git_repo(&beta);
+        fs::write(app.join("Alaco.toml"), format!("[package]\nname='app'\nversion='1.0.0'\n\n[dependencies]\nalpha = {{ git = {alpha_url:?} }}\n")).unwrap();
+
+        let error = install_git_dependency_tree(&app, &mut Vec::new())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("cyclic Git package dependency"), "{error}");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn pinning_replaces_a_branch_revision_with_the_resolved_commit() {
+        let source = "[package]\nname='demo'\nversion='1.0.0'\n\n[dependencies]\nhelper = { git = 'https://example.com/helper.git', rev='main' }\n";
+        let pinned = pin_git_dependency_revision(source, "helper", "abc123def456").unwrap();
+        let manifest = crate::manifest::Manifest::parse(&pinned, Path::new("Alaco.toml")).unwrap();
+        assert_eq!(
+            manifest.dependencies["helper"].rev.as_deref(),
+            Some("abc123def456")
+        );
+    }
+
+    fn init_test_git_repo(path: &Path) {
+        for args in [
+            vec!["init", "-q"],
+            vec!["config", "user.email", "alaco-test@example.invalid"],
+            vec!["config", "user.name", "Alaco Test"],
+            vec!["add", "Alaco.toml", "src"],
+            vec!["commit", "-qm", "test package"],
+        ] {
+            let output = std::process::Command::new("git")
+                .current_dir(path)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "Git command failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
+
+    fn git_head(path: &Path) -> String {
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(path)
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        String::from_utf8_lossy(&output.stdout).trim().to_owned()
+    }
 
     #[test]
     fn formats_short_durations_in_milliseconds() {

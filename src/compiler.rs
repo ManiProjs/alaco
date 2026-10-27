@@ -13,7 +13,7 @@ use crate::{
     codegen::cpp::CppCodegen,
     codegen::javascript::JavaScriptCodegen,
     lexer::Lexer,
-    manifest::BuildConfig,
+    manifest::{BuildConfig, Manifest},
     parser::Parser,
     stdlib::{LoadedModule, Stdlib},
 };
@@ -217,8 +217,8 @@ impl Compiler {
         Self::parse(&source, &filename)
     }
 
-    /// Resolve imported modules relative to the importing file, while keeping
-    /// `std.*` imports rooted in the installed Alaco standard library.
+    /// Resolve imported modules relative to the importing file, from declared
+    /// Git/path dependencies, or from the installed standard library.
     fn load_import_tree(
         program: &Program,
         importing_file: &Path,
@@ -235,8 +235,33 @@ impl Compiler {
             };
 
             let is_std = import.path.first().map(String::as_str) == Some("std");
+            let dependency = if is_std {
+                None
+            } else {
+                dependency_for_import(importing_file, &import.path)?
+            };
             let path = if is_std {
                 stdlib.resolve(&import.path)
+            } else if let Some((package_root, entry, remaining)) = dependency {
+                if remaining.is_empty() {
+                    package_root.join(entry)
+                } else {
+                    let mut module_path = package_root.clone();
+                    for component in &remaining {
+                        module_path.push(component);
+                    }
+                    module_path.set_extension("aco");
+                    if module_path.is_file() {
+                        module_path
+                    } else {
+                        let mut source_module_path = package_root.join("src");
+                        for component in &remaining {
+                            source_module_path.push(component);
+                        }
+                        source_module_path.set_extension("aco");
+                        source_module_path
+                    }
+                }
             } else {
                 let mut path = base_dir.to_path_buf();
                 for component in &import.path {
@@ -372,6 +397,65 @@ impl Compiler {
         }
 
         Ok(CompilationUnit { program, modules })
+    }
+}
+
+/// If the first import component names a dependency in the nearest package
+/// manifest, return that package's root, entry point, and remaining module path.
+fn dependency_for_import(
+    importing_file: &Path,
+    import_path: &[String],
+) -> Result<Option<(PathBuf, PathBuf, Vec<String>)>> {
+    let Some(dependency_name) = import_path.first() else {
+        return Ok(None);
+    };
+    let mut directory = importing_file.parent().unwrap_or_else(|| Path::new("."));
+    loop {
+        let manifest_path = directory.join("Alaco.toml");
+        if manifest_path.is_file() {
+            let manifest = Manifest::load(&manifest_path)?;
+            if let Some((declared_name, spec)) = manifest
+                .dependencies
+                .iter()
+                .find(|(name, _)| name.replace('-', "_") == *dependency_name)
+            {
+                let root = if let Some(path) = &spec.path {
+                    directory.join(path)
+                } else if spec.git.is_some() {
+                    directory
+                        .join(".alaco")
+                        .join("packages")
+                        .join(declared_name.replace('-', "_"))
+                } else {
+                    return Err(miette::miette!(
+                        "dependency '{dependency_name}' uses a version-only declaration, but Alaco has no package registry; use `alaco add <git-repository>` or a local `path` dependency"
+                    ));
+                };
+                let root = root.canonicalize().map_err(|error| {
+                    miette::miette!(
+                        "cannot resolve dependency '{dependency_name}' at '{}': {error}",
+                        root.display()
+                    )
+                })?;
+                let package_manifest_path = root.join("Alaco.toml");
+                if !package_manifest_path.is_file() {
+                    return Err(miette::miette!(
+                        "dependency '{dependency_name}' is declared in '{}' but is not installed at '{}'; run `alaco add <git-repository>` again",
+                        manifest_path.display(),
+                        root.display()
+                    ));
+                }
+                let package_manifest = Manifest::load(&package_manifest_path)?;
+                let entry = package_manifest.entry;
+                return Ok(Some((root, entry, import_path[1..].to_vec())));
+            }
+            // A dependency's own manifest takes precedence over the parent's.
+            return Ok(None);
+        }
+        let Some(parent) = directory.parent() else {
+            return Ok(None);
+        };
+        directory = parent;
     }
 }
 
@@ -606,9 +690,57 @@ mod tests {
 
     use super::{
         BuildTargetPlatform, Compiler, append_path_suffix, build_cache_key, build_target_platform,
-        validate_build_flags, validate_build_target, write_source_map,
+        dependency_for_import, validate_build_flags, validate_build_target, write_source_map,
     };
     use crate::manifest::BuildConfig;
+
+    #[test]
+    fn dependency_imports_resolve_modules_from_a_local_package() {
+        use std::fs;
+
+        let root =
+            std::env::temp_dir().join(format!("alaco-git-dependency-test-{}", std::process::id()));
+        let project = root.join("project");
+        let library = root.join("library");
+        fs::create_dir_all(project.join("src")).unwrap();
+        fs::create_dir_all(library.join("src")).unwrap();
+        fs::write(
+            project.join("Alaco.toml"),
+            "[package]\nname='app'\nversion='1.0.0'\n[dependencies]\ngeometry={ path='../library' }\n",
+        ).unwrap();
+        fs::write(
+            library.join("Alaco.toml"),
+            "[package]\nname='geometry'\nversion='1.0.0'\nentry='src/lib.aco'\n",
+        )
+        .unwrap();
+        fs::write(
+            library.join("src/lib.aco"),
+            "fn package_answer() -> Int { return 7; }\n",
+        )
+        .unwrap();
+        fs::write(
+            library.join("src/shapes.aco"),
+            "fn answer() -> Int { return 42; }\n",
+        )
+        .unwrap();
+        let main = project.join("src/main.aco");
+        let source = "import geometry; import geometry.shapes; fn main() { println(shapes.answer()); println(geometry.package_answer()); }";
+        fs::write(&main, source).unwrap();
+
+        let cpp = Compiler::compile(source, &main.to_string_lossy())
+            .expect("dependency modules should load and compile");
+        assert!(cpp.contains("namespace shapes {"), "{cpp}");
+        assert!(cpp.contains("namespace geometry {"), "{cpp}");
+        assert!(cpp.contains("shapes::answer()"), "{cpp}");
+
+        let resolution =
+            dependency_for_import(&main, &["geometry".to_owned(), "shapes".to_owned()])
+                .unwrap()
+                .unwrap();
+        assert_eq!(resolution.0, library.canonicalize().unwrap());
+        assert_eq!(resolution.2, vec!["shapes"]);
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn javascript_backend_executes_standard_library_runtime_helpers() {

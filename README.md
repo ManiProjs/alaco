@@ -44,6 +44,7 @@ When using an installed `alaco` executable, use the same commands directly. The 
 | `alaco clean` | Remove generated artifacts in the current project's `target/` directory. |
 | `alaco doctor` | Check for the C++ compiler and installed standard library. |
 | `alaco manifest` | Validate and display `Alaco.toml` package metadata. |
+| `alaco add <git-repo>` | Install a library from Git and add it to `Alaco.toml`. |
 | `alaco lsp` | Start the Language Server Protocol server over stdio for editor features. |
 | `alaco --help` | Show command-line help. |
 
@@ -73,10 +74,9 @@ edition = "2026"
 entry = "src/main.aco"
 
 [dependencies]
-# Dependencies can be declared by version:
-# colors = "^1.0"
-# Or as a local package:
-# my_utils = { path = "../my_utils" }
+# Git dependencies are added with `alaco add <git-repo>`.
+# my_utils = { git = "https://example.com/my_utils.git", rev = "<commit>" }
+# Local packages are also supported: my_utils = { path = "../my_utils" }
 
 [build]
 target = "native"       # or a compiler target triple, e.g. "aarch64-unknown-linux-gnu"
@@ -87,7 +87,7 @@ cache = true
 source-map = false
 ```
 
-`name` and a semantic `version` are required. `edition` currently supports `2026`; `entry` defaults to `src/main.aco` and must be a relative `.aco` path inside the package. Run `alaco manifest` to validate and inspect the manifest. Dependency declarations are parsed and displayed, but dependency fetching, version resolution, and exposing installed packages as import namespaces are not implemented yet; local `import` statements continue to resolve relative to their importing source file.
+`name` and a semantic `version` are required. `edition` currently supports `2026`; `entry` defaults to `src/main.aco` and must be a relative `.aco` path inside the package. Run `alaco manifest` to validate and inspect the manifest. Run `alaco add <git-repo>` from a project directory to clone a repository containing `Alaco.toml`; Alaco installs it under `.alaco/packages/`, pins the resolved Git commit in `Alaco.toml`, and recursively installs that library's Git and local-path dependencies. Every Git dependency is pinned to its resolved commit SHA, including transitive dependencies. Import the package entry with `import package_name;`, or a module with `import package_name.module;`. Hyphens in package names are normalized to underscores for the dependency/import name. There is no registry: version-only declarations without a Git or path source produce an error. Cyclic package dependency graphs are rejected with a diagnostic.
 
 The optional `[build]` table controls native compilation. `target = "native"` uses the host compiler defaults; another value is passed to Clang as `--target=...`. Only the `cpp` backend is supported. `compiler` selects the C++ compiler executable, and each string in `flags` is passed as a separate compiler argument. `cache` enables a local content-addressed cache under `.alaco-cache` beside the output. Alaco still parses, analyzes, and generates C++ on each invocation; when all inputs match, the cache skips the native compile/link step and reuses the executable. Cache keys include source and module content, standard-library files, compiler identity/version, target, and flags. `source-map = true` preserves the generated `.cpp` file and writes a `.cpp.map.json` sidecar. The sidecar maps generated C++ line numbers to Alaco source paths and line numbers wherever C++ `#line` directives are present. Currently, directives cover statements in the main source file; imported-module statements and generated code outside mapped statements have no source mapping. Cross-compilation requires a compiler that supports the requested target and access to that target's headers, libraries, and runtime. There is no dedicated sysroot setting; pass a compiler option such as `--sysroot=/path/to/sysroot` through `flags` when needed. A target triple alone does not provide a sysroot or cross-compilation toolchain.
 
