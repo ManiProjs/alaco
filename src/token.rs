@@ -25,6 +25,7 @@ pub enum TokenKind {
     False,
     Match,
     Struct,
+    Enum,
     Shell,
     And,
     Or,

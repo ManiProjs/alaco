@@ -1,0 +1,14 @@
+// Intentional diagnostic fixture: this match omits State.Failed.
+enum State {
+    Ready,
+    Busy,
+    Failed,
+}
+
+fn main() {
+    let state = State.Ready;
+    match state {
+        State.Ready => { println("ready"); }
+        State.Busy => { println("busy"); }
+    }
+}

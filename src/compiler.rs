@@ -1528,6 +1528,82 @@ struct Person {
     }
 
     #[test]
+    fn enums_support_exhaustive_matching_and_compile_to_native_code() {
+        let source = r#"
+            enum Direction {
+                North,
+                East,
+                South,
+                West,
+            }
+
+            fn label(direction: Direction) -> String {
+                match direction {
+                    Direction.North => { return "north"; }
+                    Direction.East => { return "east"; }
+                    Direction.South => { return "south"; }
+                    Direction.West => { return "west"; }
+                }
+            }
+
+            fn main() {
+                println(label(Direction.West));
+            }
+        "#;
+        Compiler::check(source, "enum_match_test.aco")
+            .expect("all enum variants should be covered");
+        let cpp = Compiler::compile(source, "enum_match_test.aco")
+            .expect("valid enum matching should generate C++");
+        assert!(cpp.contains("enum class Direction"));
+        assert!(cpp.contains("Direction::West"));
+        let javascript = Compiler::transpile_javascript(source, "enum_match_test.aco")
+            .expect("valid enum matching should transpile to JavaScript");
+        assert!(javascript.contains("const Direction = Object.freeze"));
+        assert!(javascript.contains("Direction.West"));
+
+        let output_path =
+            std::env::temp_dir().join(format!("alaco_enum_match_{}", std::process::id()));
+        Compiler::build(source, "enum_match_test.aco", &output_path)
+            .expect("enum matching should compile to a native executable");
+        let output = std::process::Command::new(&output_path)
+            .output()
+            .expect("generated enum program should run");
+        let _ = std::fs::remove_file(&output_path);
+        assert!(output.status.success());
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "west\n");
+    }
+
+    #[test]
+    fn enum_match_must_cover_every_variant_and_reject_unknown_cases() {
+        let non_exhaustive = Compiler::check(
+            "enum State { Ready, Busy, Failed } fn main() { let state = State.Ready; match state { State.Ready => { } State.Busy => { } } }",
+            "non_exhaustive_enum.aco",
+        )
+        .expect_err("a match missing an enum variant must be rejected");
+        assert!(format!("{non_exhaustive:?}").contains("missing variant: Failed"));
+
+        let unknown = Compiler::check(
+            "enum State { Ready, Busy } fn main() { let state = State.Ready; match state { State.Ready => { } State.Busy => { } State.Failed => { } } }",
+            "unknown_enum_variant.aco",
+        )
+        .expect_err("unknown enum variants must be rejected");
+        assert!(format!("{unknown:?}").contains("enum 'State' has no variant 'Failed'"));
+
+        Compiler::check(
+            "enum State { Ready, Busy } fn main() { let state = State.Ready; match state { State.Ready => { } _ => { } } }",
+            "enum_wildcard_match.aco",
+        )
+        .expect("a wildcard should make an enum match exhaustive");
+
+        let unreachable = Compiler::check(
+            "enum State { Ready, Busy } fn main() { let state = State.Ready; match state { _ => { } State.Ready => { } } }",
+            "unreachable_match_arm.aco",
+        )
+        .expect_err("match arms after the wildcard should be rejected");
+        assert!(format!("{unreachable:?}").contains("unreachable match arm"));
+    }
+
+    #[test]
     fn semantic_analysis_produces_typed_ir_signatures() {
         let program = Compiler::parse(
             "fn greet(name: String) -> String { return name; } fn main() { let value = greet(\"Alaco\"); }",

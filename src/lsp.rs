@@ -357,6 +357,7 @@ impl Server {
         for (label, kind, detail) in [
             ("fn", 14, "Declare a function"),
             ("struct", 14, "Declare a struct"),
+            ("enum", 14, "Declare an enum"),
             ("import", 14, "Import a module"),
             ("from", 14, "Import selected symbols"),
             ("as", 14, "Import alias"),
@@ -441,6 +442,15 @@ impl Server {
                     Item::Struct(s) => {
                         entries.insert(s.name.clone(), (22, "User-defined struct".into()));
                     }
+                    Item::Enum(enumeration) => {
+                        entries.insert(enumeration.name.clone(), (13, "User-defined enum".into()));
+                        for variant in &enumeration.variants {
+                            entries.insert(
+                                variant.name.clone(),
+                                (20, format!("Variant of {}", enumeration.name)),
+                            );
+                        }
+                    }
                     Item::Import(import) => {
                         if let Some(last) = import.path.last() {
                             entries.insert(last.clone(), (9, "Imported module".into()));
@@ -478,6 +488,11 @@ impl Server {
                             entries
                                 .entry(structure.name)
                                 .or_insert_with(|| (22, "Workspace type".into()));
+                        }
+                        Item::Enum(enumeration) => {
+                            entries
+                                .entry(enumeration.name)
+                                .or_insert_with(|| (13, "Workspace enum".into()));
                         }
                         _ => {}
                     }
@@ -887,6 +902,9 @@ impl Server {
                     }
                     Item::Struct(structure) => {
                         type_names.insert(structure.name);
+                    }
+                    Item::Enum(enumeration) => {
+                        type_names.insert(enumeration.name);
                     }
                     _ => {}
                 }
@@ -1410,7 +1428,12 @@ fn is_declaration(tokens: &[Token], index: usize) -> bool {
     if index > 0
         && matches!(
             tokens[index - 1].kind,
-            TokenKind::Fn | TokenKind::Struct | TokenKind::Let | TokenKind::Mut | TokenKind::For
+            TokenKind::Fn
+                | TokenKind::Struct
+                | TokenKind::Enum
+                | TokenKind::Let
+                | TokenKind::Mut
+                | TokenKind::For
         )
     {
         return true;
@@ -1654,6 +1677,7 @@ fn semantic_type(
         | TokenKind::Else
         | TokenKind::Match
         | TokenKind::Struct
+        | TokenKind::Enum
         | TokenKind::Shell
         | TokenKind::And
         | TokenKind::Or => 5,
@@ -1764,6 +1788,10 @@ fn symbols_for(program: &Program, source: &str) -> Value {
                 let range = span_range(source, s.span.start, s.span.end);
                 symbols.push(json!({"name":s.name,"kind":23,"range":range,"selectionRange":span_range(source,s.span.start,(s.span.start+s.name.len()).min(s.span.end)),"children":s.fields.iter().map(|f|json!({"name":f.name,"kind":8,"range":span_range(source,f.span.start,f.span.end),"selectionRange":span_range(source,f.span.start,(f.span.start+f.name.len()).min(f.span.end)),"detail":type_name(&f.ty)})).collect::<Vec<_>>() }));
             }
+            Item::Enum(enumeration) => {
+                let range = span_range(source, enumeration.span.start, enumeration.span.end);
+                symbols.push(json!({"name":enumeration.name,"kind":10,"range":range,"selectionRange":span_range(source,enumeration.span.start,(enumeration.span.start+enumeration.name.len()).min(enumeration.span.end)),"children":enumeration.variants.iter().map(|variant|json!({"name":variant.name,"kind":22,"range":span_range(source,variant.span.start,variant.span.end),"selectionRange":span_range(source,variant.span.start,variant.span.end)})).collect::<Vec<_>>() }));
+            }
             Item::Import(_) | Item::Statement(_) => {}
         }
     }
@@ -1774,6 +1802,7 @@ fn keyword_help(name: &str) -> Option<&'static str> {
     Some(match name {
         "fn" => "`fn name(params) -> Type { ... }` declares a function.",
         "struct" => "`struct Name { field: Type }` declares a named record type.",
+        "enum" => "`enum Name { First, Second }` declares a finite set of named variants.",
         "let" => {
             "`let name = expression` declares an immutable binding. Use `let mut` for reassignment."
         }

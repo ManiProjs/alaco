@@ -97,6 +97,21 @@ function __builtin_time_unix_seconds() { return Math.floor(Date.now() / 1000); }
 function __builtin_time_sleep_ms(ms) { if (ms > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
 "#);
         self.line("");
+        for enumeration in &ir.enums {
+            let variants = enumeration
+                .variants
+                .iter()
+                .map(|variant| format!("{}: {}", variant, js_string(variant)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.line(&format!(
+                "const {} = Object.freeze({{ {} }});",
+                enumeration.name, variants
+            ));
+        }
+        if !ir.enums.is_empty() {
+            self.line("");
+        }
         for structure in &ir.structs {
             self.line(&format!("class {} {{", structure.name));
             self.indent += 1;
@@ -317,6 +332,15 @@ function __builtin_time_sleep_ms(ms) { if (ms > 0) Atomics.wait(new Int32Array(n
                     self.indent -= 1;
                 }
                 if !arms.is_empty() {
+                    if !arms
+                        .iter()
+                        .any(|arm| matches!(arm.pattern, IrMatchPattern::Wildcard))
+                    {
+                        self.line("} else {");
+                        self.indent += 1;
+                        self.line("throw new Error('unreachable non-exhaustive match');");
+                        self.indent -= 1;
+                    }
                     self.line("}");
                 }
                 self.indent -= 1;
@@ -475,6 +499,9 @@ function __builtin_time_sleep_ms(ms) { if (ms > 0) Atomics.wait(new Int32Array(n
             IrMatchPattern::String(s) => Some(format!("{} === {}", value, js_string(s))),
             IrMatchPattern::Bool(b) => Some(format!("{} === {}", value, b)),
             IrMatchPattern::Identifier(n) => Some(format!("{} === {}", value, n)),
+            IrMatchPattern::EnumVariant { enum_name, variant } => {
+                Some(format!("{} === {}.{}", value, enum_name, variant))
+            }
             IrMatchPattern::Wildcard => None,
         }
     }

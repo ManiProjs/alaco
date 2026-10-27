@@ -7,6 +7,7 @@ use crate::{ast::Type, error::AlacoError, ir::*};
 pub fn validate(program: &IrProgram) -> Result<(), AlacoError> {
     let mut item_functions = HashSet::new();
     let mut item_structs = HashSet::new();
+    let mut item_enums = HashSet::new();
     for item in &program.items {
         match item {
             IrItem::Function(name) => {
@@ -25,10 +26,20 @@ pub fn validate(program: &IrProgram) -> Result<(), AlacoError> {
                     )));
                 }
             }
+            IrItem::Enum(name) => {
+                if !item_enums.insert(name.as_str())
+                    || !program.enums.iter().any(|item| item.name == *name)
+                {
+                    return Err(invariant(format!(
+                        "invalid or duplicate enum item `{name}`"
+                    )));
+                }
+            }
         }
     }
     if item_functions.len() != program.functions.len()
         || item_structs.len() != program.structs.len()
+        || item_enums.len() != program.enums.len()
     {
         return Err(invariant(
             "IR item list does not cover every function and struct".into(),
@@ -74,6 +85,26 @@ pub fn validate(program: &IrProgram) -> Result<(), AlacoError> {
             return Err(invariant(format!(
                 "duplicate field in struct `{}`",
                 structure.name
+            )));
+        }
+    }
+    let mut enum_names = HashSet::new();
+    for enumeration in &program.enums {
+        if !enum_names.insert(enumeration.name.as_str()) {
+            return Err(invariant(format!(
+                "duplicate enum `{}` in IR",
+                enumeration.name
+            )));
+        }
+        let mut variants = HashSet::new();
+        if enumeration
+            .variants
+            .iter()
+            .any(|variant| !variants.insert(variant.as_str()))
+        {
+            return Err(invariant(format!(
+                "duplicate variant in enum `{}`",
+                enumeration.name
             )));
         }
     }
@@ -234,6 +265,7 @@ mod tests {
             items: vec![IrItem::Function("missing".into())],
             functions: vec![],
             structs: vec![],
+            enums: vec![],
         };
         assert!(validate(&ir).is_err());
     }
@@ -250,6 +282,7 @@ mod tests {
                 span: Span { start: 0, end: 1 },
             }],
             structs: vec![],
+            enums: vec![],
         };
         assert!(validate(&ir).is_ok());
     }

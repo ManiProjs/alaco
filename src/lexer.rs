@@ -407,6 +407,7 @@ impl<'a> Lexer<'a> {
             "false" => self.add_token(TokenKind::False),
             "match" => self.add_token(TokenKind::Match),
             "struct" => self.add_token(TokenKind::Struct),
+            "enum" => self.add_token(TokenKind::Enum),
             "and" => self.add_token(TokenKind::And),
             "or" => self.add_token(TokenKind::Or),
 

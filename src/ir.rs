@@ -179,12 +179,20 @@ pub struct IrProgram {
     pub items: Vec<IrItem>,
     pub functions: Vec<IrFunction>,
     pub structs: Vec<IrStruct>,
+    pub enums: Vec<IrEnum>,
 }
 
 #[derive(Debug, Clone)]
 pub enum IrItem {
     Function(String),
     Struct(String),
+    Enum(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct IrEnum {
+    pub name: String,
+    pub variants: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -287,6 +295,7 @@ pub enum IrMatchPattern {
     String(String),
     Bool(bool),
     Identifier(String),
+    EnumVariant { enum_name: String, variant: String },
     Wildcard,
 }
 
@@ -374,6 +383,7 @@ impl IrProgram {
             .filter_map(|item| match item {
                 ast::Item::Function(function) => Some(IrItem::Function(function.name.clone())),
                 ast::Item::Struct(structure) => Some(IrItem::Struct(structure.name.clone())),
+                ast::Item::Enum(enumeration) => Some(IrItem::Enum(enumeration.name.clone())),
                 ast::Item::Import(_) | ast::Item::Statement(_) => None,
             })
             .collect();
@@ -419,10 +429,26 @@ impl IrProgram {
                 _ => None,
             })
             .collect();
+        let enums = program
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                ast::Item::Enum(enumeration) => Some(IrEnum {
+                    name: enumeration.name.clone(),
+                    variants: enumeration
+                        .variants
+                        .iter()
+                        .map(|variant| variant.name.clone())
+                        .collect(),
+                }),
+                _ => None,
+            })
+            .collect();
         Self {
             items,
             functions,
             structs,
+            enums,
         }
     }
 
@@ -528,6 +554,12 @@ fn lower_stmt(stmt: &ast::Stmt, types: &ExpressionTypes, ids: &ExpressionIds) ->
                         ast::MatchPattern::Bool(value) => IrMatchPattern::Bool(*value),
                         ast::MatchPattern::Identifier(value) => {
                             IrMatchPattern::Identifier(value.clone())
+                        }
+                        ast::MatchPattern::EnumVariant { enum_name, variant } => {
+                            IrMatchPattern::EnumVariant {
+                                enum_name: enum_name.clone(),
+                                variant: variant.clone(),
+                            }
                         }
                         ast::MatchPattern::Wildcard => IrMatchPattern::Wildcard,
                     },

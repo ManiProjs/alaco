@@ -14,6 +14,7 @@ alaco check examples/type_safety.aco
 | `functions.aco` | Function declarations, calls, and return values |
 | `hello_five_times.aco` | Fixed-count `loop (repeat count)` |
 | `match.aco` | `match` branches and the `_` fallback |
+| `enums_match.aco` | Unit enum declarations, qualified variants, and exhaustive matching |
 | `struct.aco` | Struct construction, field access, and printing |
 | `string_interpolation.aco` | Interpolating variables with `${name}` |
 | `shell.aco` | Running a host shell command and printing its result |
@@ -47,10 +48,11 @@ alaco check examples/type_safety.aco
 
 ## Intentional diagnostic fixture
 
-`a_file_with_error.aco` is intentionally invalid: it calls `printl`, a misspelling of `println`. Use it to check that name-analysis diagnostics catch a typo:
+`a_file_with_error.aco` and `non_exhaustive_enum_match.aco` are intentionally invalid. The former calls `printl`, a misspelling of `println`; the latter omits `State.Failed` from a match. Use them to check name-analysis and exhaustiveness diagnostics:
 
 ```sh
 alaco check examples/a_file_with_error.aco
+alaco check examples/non_exhaustive_enum_match.aco
 ```
 
 This fixture is expected to fail semantic checking; it is not a passing runtime example. Do not run every file under `examples/` expecting every one to compile successfully.

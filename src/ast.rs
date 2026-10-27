@@ -23,6 +23,7 @@ pub struct Import {
 pub enum Item {
     Import(Import),
     Struct(Struct),
+    Enum(EnumDecl),
     Function(Function),
     // Reserved for future top-level executable statements; the parser currently rejects them.
     #[allow(dead_code)]
@@ -33,6 +34,19 @@ pub enum Item {
 pub struct Struct {
     pub name: String,
     pub fields: Vec<StructField>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct EnumDecl {
+    pub name: String,
+    pub variants: Vec<EnumVariant>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct EnumVariant {
+    pub name: String,
     pub span: Span,
 }
 
@@ -78,6 +92,7 @@ pub struct Block {
 pub struct MatchArm {
     pub pattern: MatchPattern,
     pub body: Block,
+    pub pattern_span: Span,
 }
 
 #[derive(Debug, Clone)]
@@ -86,6 +101,7 @@ pub enum MatchPattern {
     String(String),
     Bool(bool),
     Identifier(String),
+    EnumVariant { enum_name: String, variant: String },
     Wildcard,
 }
 

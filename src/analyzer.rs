@@ -6,8 +6,8 @@ use std::{
 
 use crate::{
     ast::{
-        Block, Expr, Function, Item, LoopKind, MatchPattern, Program, Span, Stmt, Struct, Type,
-        UnaryOp,
+        Block, EnumDecl, Expr, Function, Item, LoopKind, MatchPattern, Program, Span, Stmt, Struct,
+        Type, UnaryOp,
     },
     error::AlacoError,
     ir::{ExprId, ExpressionIds, ExpressionTypes, IrProgram},
@@ -155,6 +155,37 @@ impl<'a> Analyzer<'a> {
                         span: structure.span.into(),
                     });
                 }
+            } else if let Item::Enum(enumeration) = item {
+                if matches!(
+                    enumeration.name.as_str(),
+                    "Int" | "Float" | "Bool" | "String" | "Shell" | "ShellResult" | "Void"
+                ) {
+                    return Err(self.error(
+                        format!(
+                            "enum name '{}' is reserved for a built-in type",
+                            enumeration.name
+                        ),
+                        Some(enumeration.span),
+                    ));
+                }
+                if !structs.insert(enumeration.name.as_str()) {
+                    return Err(self.error(
+                        format!("duplicate type '{}'", enumeration.name),
+                        Some(enumeration.span),
+                    ));
+                }
+                let mut variants = HashSet::new();
+                for variant in &enumeration.variants {
+                    if !variants.insert(variant.name.as_str()) {
+                        return Err(self.error(
+                            format!(
+                                "duplicate variant '{}' in enum '{}'",
+                                variant.name, enumeration.name
+                            ),
+                            Some(variant.span),
+                        ));
+                    }
+                }
             }
         }
 
@@ -163,6 +194,8 @@ impl<'a> Analyzer<'a> {
                 Item::Import(_) => {}
 
                 Item::Struct(_) => {}
+
+                Item::Enum(_) => {}
 
                 Item::Function(function) => {
                     if function.name.starts_with("__builtin_") {
@@ -374,6 +407,7 @@ impl<'a> Analyzer<'a> {
             .iter()
             .filter_map(|item| match item {
                 Item::Struct(structure) => Some(structure.name.as_str()),
+                Item::Enum(enumeration) => Some(enumeration.name.as_str()),
                 _ => None,
             })
             .collect()
@@ -640,7 +674,8 @@ impl<'a> Analyzer<'a> {
             functions,
         )?;
 
-        if expected_return != Type::Void && !Self::block_guarantees_return(&function.body) {
+        if expected_return != Type::Void && !Self::block_guarantees_return(&function.body, program)
+        {
             return Err(self.error(
                 format!(
                     "function '{}' may finish without returning a value of type '{}'",
@@ -654,7 +689,7 @@ impl<'a> Analyzer<'a> {
         Ok(())
     }
 
-    fn block_guarantees_return(block: &Block) -> bool {
+    fn block_guarantees_return(block: &Block, program: &Program) -> bool {
         for statement in &block.statements {
             let always_returns = match statement {
                 Stmt::Return(..) => true,
@@ -663,15 +698,48 @@ impl<'a> Analyzer<'a> {
                     else_block: Some(else_block),
                     ..
                 } => {
-                    Self::block_guarantees_return(then_block)
-                        && Self::block_guarantees_return(else_block)
+                    Self::block_guarantees_return(then_block, program)
+                        && Self::block_guarantees_return(else_block, program)
                 }
                 Stmt::Match { arms, .. } => {
-                    arms.iter()
-                        .any(|arm| matches!(arm.pattern, MatchPattern::Wildcard))
+                    let has_wildcard = arms
+                        .iter()
+                        .any(|arm| matches!(arm.pattern, MatchPattern::Wildcard));
+                    let enum_coverage = arms
+                        .iter()
+                        .find_map(|arm| match &arm.pattern {
+                            MatchPattern::EnumVariant { enum_name, .. } => Some(enum_name.as_str()),
+                            _ => None,
+                        })
+                        .and_then(|enum_name| {
+                            let enumeration = program.items.iter().find_map(|item| match item {
+                                Item::Enum(enumeration) if enumeration.name == enum_name => {
+                                    Some(enumeration)
+                                }
+                                _ => None,
+                            })?;
+                            let covered = arms
+                                .iter()
+                                .filter_map(|arm| match &arm.pattern {
+                                    MatchPattern::EnumVariant {
+                                        enum_name: candidate,
+                                        variant,
+                                    } if candidate == enum_name => Some(variant.as_str()),
+                                    _ => None,
+                                })
+                                .collect::<HashSet<_>>();
+                            Some(
+                                enumeration
+                                    .variants
+                                    .iter()
+                                    .all(|variant| covered.contains(variant.name.as_str())),
+                            )
+                        })
+                        .unwrap_or(false);
+                    (has_wildcard || enum_coverage)
                         && arms
                             .iter()
-                            .all(|arm| Self::block_guarantees_return(&arm.body))
+                            .all(|arm| Self::block_guarantees_return(&arm.body, program))
                 }
                 _ => false,
             };
@@ -1010,8 +1078,18 @@ impl<'a> Analyzer<'a> {
             Stmt::Match {
                 expression,
                 arms,
-                span: _,
+                span,
             } => {
+                if let Some(index) = arms
+                    .iter()
+                    .position(|arm| matches!(arm.pattern, MatchPattern::Wildcard))
+                    && index + 1 < arms.len()
+                {
+                    return Err(self.error(
+                        "unreachable match arm after the '_' fallback",
+                        Some(arms[index + 1].pattern_span),
+                    ));
+                }
                 let expression_type =
                     self.type_of_expression(expression, scopes, program, functions)?;
 
@@ -1019,8 +1097,9 @@ impl<'a> Analyzer<'a> {
                     self.check_match_pattern(
                         &arm.pattern,
                         &expression_type,
-                        expression.span(),
+                        arm.pattern_span,
                         scopes,
+                        program,
                     )?;
 
                     self.analyze_block(
@@ -1032,6 +1111,8 @@ impl<'a> Analyzer<'a> {
                         functions,
                     )?;
                 }
+
+                self.check_match_exhaustiveness(&expression_type, arms, *span, program)?;
             }
 
             Stmt::When {
@@ -1333,6 +1414,27 @@ impl<'a> Analyzer<'a> {
                 member,
                 span,
             } => {
+                if let Expr::Identifier(enum_name, _) = object.as_ref()
+                    && let Some(enumeration) = self.find_enum(program, enum_name)
+                {
+                    if enumeration
+                        .variants
+                        .iter()
+                        .any(|variant| variant.name == *member)
+                    {
+                        // This identifier names the enum type, not a local
+                        // value. Annotate it so typed-IR coverage stays total.
+                        let object_id = self.expression_id(object);
+                        self.expression_types
+                            .borrow_mut()
+                            .insert(object_id, Type::Named(enum_name.clone()));
+                        return Ok(Type::Named(enum_name.clone()));
+                    }
+                    return Err(self.error(
+                        format!("enum '{}' has no variant '{}'", enum_name, member),
+                        Some(*span),
+                    ));
+                }
                 let object_type = self.type_of_expression(object, scopes, program, functions)?;
 
                 self.type_of_member(&object_type, member, program, *span)
@@ -1517,6 +1619,13 @@ impl<'a> Analyzer<'a> {
         program.items.iter().find_map(|item| match item {
             Item::Struct(structure) if structure.name == name => Some(structure),
 
+            _ => None,
+        })
+    }
+
+    fn find_enum<'b>(&self, program: &'b Program, name: &str) -> Option<&'b EnumDecl> {
+        program.items.iter().find_map(|item| match item {
+            Item::Enum(enumeration) if enumeration.name == name => Some(enumeration),
             _ => None,
         })
     }
@@ -1941,6 +2050,7 @@ impl<'a> Analyzer<'a> {
         expression_type: &Type,
         span: Span,
         scopes: &[HashMap<String, Variable>],
+        program: &Program,
     ) -> Result<(), AlacoError> {
         match pattern {
             MatchPattern::Number(_) => {
@@ -1979,9 +2089,90 @@ impl<'a> Analyzer<'a> {
                     ));
                 }
             }
+            MatchPattern::EnumVariant { enum_name, variant } => {
+                let expected_type = Type::Named(enum_name.clone());
+                if expression_type != &expected_type {
+                    return Err(self.error(
+                        format!(
+                            "enum pattern '{}.{}' cannot match {}",
+                            enum_name,
+                            variant,
+                            self.type_name(expression_type)
+                        ),
+                        Some(span),
+                    ));
+                }
+                let enumeration = self.find_enum(program, enum_name).ok_or_else(|| {
+                    self.error(format!("unknown enum '{}'", enum_name), Some(span))
+                })?;
+                if !enumeration
+                    .variants
+                    .iter()
+                    .any(|item| item.name == *variant)
+                {
+                    return Err(self.error(
+                        format!("enum '{}' has no variant '{}'", enum_name, variant),
+                        Some(span),
+                    ));
+                }
+            }
             MatchPattern::Wildcard => {}
         }
 
+        Ok(())
+    }
+
+    fn check_match_exhaustiveness(
+        &self,
+        expression_type: &Type,
+        arms: &[crate::ast::MatchArm],
+        span: Span,
+        program: &Program,
+    ) -> Result<(), AlacoError> {
+        let Type::Named(enum_name) = expression_type else {
+            return Ok(());
+        };
+        let Some(enumeration) = self.find_enum(program, enum_name) else {
+            return Ok(());
+        };
+        let mut covered = HashSet::new();
+        for arm in arms {
+            if let MatchPattern::EnumVariant {
+                enum_name: pattern_enum,
+                variant,
+            } = &arm.pattern
+                && pattern_enum == enum_name
+                && !covered.insert(variant.as_str())
+            {
+                return Err(self.error(
+                    format!("duplicate match case '{}.{}'", pattern_enum, variant),
+                    Some(span),
+                ));
+            }
+        }
+        if arms
+            .iter()
+            .any(|arm| matches!(arm.pattern, MatchPattern::Wildcard))
+        {
+            return Ok(());
+        }
+        let missing = enumeration
+            .variants
+            .iter()
+            .filter(|variant| !covered.contains(variant.name.as_str()))
+            .map(|variant| variant.name.as_str())
+            .collect::<Vec<_>>();
+        if !missing.is_empty() {
+            return Err(self.error(
+                format!(
+                    "non-exhaustive match for '{}'; missing variant{}: {}",
+                    enum_name,
+                    if missing.len() == 1 { "" } else { "s" },
+                    missing.join(", ")
+                ),
+                Some(span),
+            ));
+        }
         Ok(())
     }
 

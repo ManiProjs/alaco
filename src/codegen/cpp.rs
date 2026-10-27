@@ -3,8 +3,8 @@ use std::collections::HashSet;
 use crate::{
     ast::{Type, UnaryOp},
     ir::{
-        IrCallee, IrExpr, IrExprKind, IrFunction, IrItem, IrLoopKind, IrMatchPattern, IrPipeTarget,
-        IrProgram, IrStmt, IrStruct,
+        IrCallee, IrEnum, IrExpr, IrExprKind, IrFunction, IrItem, IrLoopKind, IrMatchPattern,
+        IrPipeTarget, IrProgram, IrStmt, IrStruct,
     },
     language::BinaryOp,
 };
@@ -52,6 +52,7 @@ pub struct CppCodegen {
     output: String,
     indent: usize,
     module_aliases: HashSet<String>,
+    enum_names: HashSet<String>,
     lifetime_variables: HashSet<String>,
     uses_args: bool,
     in_main_function: bool,
@@ -66,6 +67,7 @@ impl CppCodegen {
             output: String::new(),
             indent: 0,
             module_aliases: HashSet::new(),
+            enum_names: HashSet::new(),
             lifetime_variables: HashSet::new(),
             uses_args: false,
             in_main_function: false,
@@ -92,11 +94,20 @@ impl CppCodegen {
         modules: &[crate::stdlib::LoadedModule],
     ) -> String {
         self.module_aliases = modules.iter().map(|module| module.alias.clone()).collect();
+        self.enum_names = ir
+            .enums
+            .iter()
+            .map(|enumeration| enumeration.name.clone())
+            .collect();
         let requirements = self.runtime_requirements(ir, modules);
         self.uses_args = requirements.args;
 
         self.generate_header(&requirements);
         self.generate_runtime(&requirements);
+
+        for enumeration in &ir.enums {
+            self.generate_ir_enum(enumeration);
+        }
 
         for structure in &ir.structs {
             self.generate_ir_struct(structure);
@@ -134,6 +145,13 @@ impl CppCodegen {
                                 .find(|item| &item.name == name)
                                 .expect("IR item must reference a struct"),
                         ),
+                        IrItem::Enum(name) => self.generate_ir_enum(
+                            module_ir
+                                .enums
+                                .iter()
+                                .find(|item| &item.name == name)
+                                .expect("IR item must reference an enum"),
+                        ),
                     }
                 }
             } else {
@@ -162,6 +180,13 @@ impl CppCodegen {
                                 .iter()
                                 .find(|item| &item.name == name)
                                 .expect("IR item must reference a struct"),
+                        ),
+                        IrItem::Enum(name) => self.generate_ir_enum(
+                            module_ir
+                                .enums
+                                .iter()
+                                .find(|item| &item.name == name)
+                                .expect("IR item must reference an enum"),
                         ),
                     }
                 }
@@ -1372,6 +1397,21 @@ static std::string __builtin_http_error(const std::string& url) { (void)__alaco_
         self.push_line("");
     }
 
+    fn generate_ir_enum(&mut self, enumeration: &IrEnum) {
+        let variants = enumeration
+            .variants
+            .iter()
+            .map(|variant| self.cpp_identifier(variant))
+            .collect::<Vec<_>>()
+            .join(", ");
+        self.push_line(&format!(
+            "enum class {} {{ {} }};",
+            self.cpp_identifier(&enumeration.name),
+            variants
+        ));
+        self.push_line("");
+    }
+
     fn generate_ir_function(&mut self, function: &IrFunction) {
         let outer_lifetimes = std::mem::take(&mut self.lifetime_variables);
         Self::collect_lifetime_names(&function.body, &mut self.lifetime_variables);
@@ -1606,6 +1646,15 @@ static std::string __builtin_http_error(const std::string& url) { (void)__alaco_
                     self.generate_ir_block_contents(&arm.body);
                     self.indent -= 1;
                 }
+                if !arms
+                    .iter()
+                    .any(|arm| matches!(arm.pattern, IrMatchPattern::Wildcard))
+                {
+                    self.push_line("} else {");
+                    self.indent += 1;
+                    self.push_line("std::abort();");
+                    self.indent -= 1;
+                }
                 self.push_line("}");
             }
         }
@@ -1727,11 +1776,23 @@ static std::string __builtin_http_error(const std::string& url) { (void)__alaco_
                     .join(", ");
                 format!("{}({})", self.ir_callee(callee), args)
             }
-            IrExprKind::Member { object, member } => format!(
-                "{}.{}",
-                self.ir_expression(object),
-                self.cpp_identifier(member)
-            ),
+            IrExprKind::Member { object, member } => {
+                if let IrExprKind::Identifier(enum_name) = &object.kind
+                    && self.enum_names.contains(enum_name)
+                {
+                    format!(
+                        "{}::{}",
+                        self.cpp_identifier(enum_name),
+                        self.cpp_identifier(member)
+                    )
+                } else {
+                    format!(
+                        "{}.{}",
+                        self.ir_expression(object),
+                        self.cpp_identifier(member)
+                    )
+                }
+            }
             IrExprKind::Shell { command } => {
                 format!("shell_async({})", self.cpp_string_literal(command))
             }
@@ -1789,6 +1850,13 @@ static std::string __builtin_http_error(const std::string& url) { (void)__alaco_
             IrMatchPattern::Identifier(identifier) => {
                 Some(format!("{} == {}", value, self.cpp_identifier(identifier)))
             }
+
+            IrMatchPattern::EnumVariant { enum_name, variant } => Some(format!(
+                "{} == {}::{}",
+                value,
+                self.cpp_identifier(enum_name),
+                self.cpp_identifier(variant)
+            )),
 
             IrMatchPattern::Wildcard => None,
         }

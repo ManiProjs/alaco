@@ -1,7 +1,7 @@
 use crate::{
     ast::{
-        Block, Expr, Function, Import, Item, LoopKind, MatchArm, MatchPattern, Param, Program,
-        Span, Stmt, Struct, StructField, Type, UnaryOp,
+        Block, EnumDecl, EnumVariant, Expr, Function, Import, Item, LoopKind, MatchArm,
+        MatchPattern, Param, Program, Span, Stmt, Struct, StructField, Type, UnaryOp,
     },
     error::AlacoError,
     language::BinaryOp,
@@ -28,10 +28,12 @@ impl Parser {
                 items.push(Item::Import(self.parse_import()?));
             } else if self.check(&TokenKind::Struct) {
                 items.push(Item::Struct(self.parse_struct()?));
+            } else if self.check(&TokenKind::Enum) {
+                items.push(Item::Enum(self.parse_enum()?));
             } else if self.check(&TokenKind::Fn) {
                 items.push(Item::Function(self.parse_function()?));
             } else {
-                return Err(self.error("expected 'struct', 'import', or 'fn' at top level"));
+                return Err(self.error("expected 'enum', 'struct', 'import', or 'fn' at top level"));
             }
 
             self.skip_newlines();
@@ -151,6 +153,48 @@ impl Parser {
         Ok(Struct {
             name,
             fields,
+            span: Span { start, end },
+        })
+    }
+
+    fn parse_enum(&mut self) -> Result<EnumDecl, AlacoError> {
+        let start = self.peek().span.offset();
+        self.consume(&TokenKind::Enum, "expected 'enum'")?;
+        let name = self.consume_identifier("expected enum name")?;
+        self.skip_newlines();
+        self.consume(&TokenKind::LeftBrace, "expected '{' after enum name")?;
+        self.skip_newlines();
+
+        let mut variants = Vec::new();
+        while !self.check(&TokenKind::RightBrace) && !self.is_at_end() {
+            let variant_name = self.consume_identifier("expected enum variant name")?;
+            let token = self.previous();
+            variants.push(EnumVariant {
+                name: variant_name,
+                span: self.token_span(token),
+            });
+
+            if self.matches(&TokenKind::Comma) || self.matches(&TokenKind::Semicolon) {
+                self.skip_newlines();
+                continue;
+            }
+            if self.matches(&TokenKind::Newline) {
+                self.skip_newlines();
+                continue;
+            }
+            if !self.check(&TokenKind::RightBrace) {
+                return Err(self.error("expected ',', newline, or '}' after enum variant"));
+            }
+        }
+
+        if variants.is_empty() {
+            return Err(self.error("enum must declare at least one variant"));
+        }
+        self.consume(&TokenKind::RightBrace, "expected '}' after enum variants")?;
+        let end = self.previous().span.offset() + self.previous().span.len();
+        Ok(EnumDecl {
+            name,
+            variants,
             span: Span { start, end },
         })
     }
@@ -530,7 +574,13 @@ impl Parser {
         let mut arms = Vec::new();
 
         while !self.check(&TokenKind::RightBrace) && !self.is_at_end() {
+            let pattern_start = self.peek().span.offset();
             let pattern = self.parse_match_pattern()?;
+            let pattern_end = self.previous().span.offset() + self.previous().span.len();
+            let pattern_span = Span {
+                start: pattern_start,
+                end: pattern_end,
+            };
 
             self.consume(&TokenKind::Arrow, "expected '=>' after match pattern")?;
 
@@ -557,7 +607,11 @@ impl Parser {
                 }
             };
 
-            arms.push(MatchArm { pattern, body });
+            arms.push(MatchArm {
+                pattern,
+                body,
+                pattern_span,
+            });
 
             self.skip_newlines();
         }
@@ -603,6 +657,12 @@ impl Parser {
 
                 if name == "_" {
                     Ok(MatchPattern::Wildcard)
+                } else if self.matches(&TokenKind::Dot) {
+                    let variant = self.consume_identifier("expected enum variant after '.'")?;
+                    Ok(MatchPattern::EnumVariant {
+                        enum_name: name,
+                        variant,
+                    })
                 } else {
                     Ok(MatchPattern::Identifier(name))
                 }

@@ -61,7 +61,35 @@ fn process_ids(ids: Array<Option<Int>>) {
 
 The currently recognized type constructors are `Array<T>`, `Set<T>`, `Map<K, V>`, `Option<T>`, and `Result<T, E>`. The compiler checks constructor names, argument counts, nested types, and rejects `Void` in value positions. Tuple types use `(T, U, ...)` and require at least two elements. Function types use `fn(ArgumentType, ...) -> ReturnType`; values with a function type can be called, with argument count and argument types checked at compile time. The native backend represents these types using C++ standard-library containers, `std::optional`, `std::variant`, `std::tuple`, and `std::function`.
 
-These constructors currently provide type annotations and native layout. Alaco does not yet provide generic function or generic struct declarations, collection literals and operations, `Option`/`Result` constructors and pattern matching, or enum/trait declarations. Those need dedicated language semantics before these types can be used as a complete application-level API.
+These constructors currently provide type annotations and native layout. Alaco does not yet provide generic function or generic struct declarations, collection literals and operations, `Option`/`Result` constructors and pattern matching, or trait declarations. Enums and exhaustive matching are supported for named, payload-free variants; payload-bearing variants and generic declarations remain future work.
+
+### Enums and exhaustive `match`
+
+Declare an enum with one or more named variants. Use `EnumName.Variant` to construct a value and to name a case in a match:
+
+```alaco
+enum Direction {
+    North,
+    East,
+    South,
+    West,
+}
+
+fn direction_name(direction: Direction) -> String {
+    match direction {
+        Direction.North => { return "north"; }
+        Direction.East => { return "east"; }
+        Direction.South => { return "south"; }
+        Direction.West => { return "west"; }
+    }
+}
+
+fn main() {
+    println(direction_name(Direction.West));
+}
+```
+
+Every enum match must cover every variant, or include `_` as a fallback. Missing variants and unknown or duplicate variant cases are compile-time errors. Enum variants currently carry no payloads; `match` remains a statement, and each arm contains a statement or block.
 
 ## Functions
 
@@ -164,7 +192,7 @@ match answer {
 }
 ```
 
-The currently documented loop form is a fixed-count repeat loop. `match` supports literal patterns and `_` as a catch-all. Do not assume `while`, `for`, `break`, or advanced pattern matching are available unless the compiler's current grammar explicitly supports them.
+The currently documented loop form is a fixed-count repeat loop. `match` supports literal patterns, qualified enum variants, and `_` as a catch-all. Enum matches are checked for exhaustiveness. Enum variants do not carry payloads yet. Do not assume `break` or payload-bearing pattern matching are available unless the compiler's current grammar explicitly supports them.
 
 ## Structs
 

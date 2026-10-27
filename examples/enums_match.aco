@@ -1,0 +1,20 @@
+enum Direction {
+    North,
+    East,
+    South,
+    West,
+}
+
+fn direction_name(direction: Direction) -> String {
+    match direction {
+        Direction.North => { return "north"; }
+        Direction.East => { return "east"; }
+        Direction.South => { return "south"; }
+        Direction.West => { return "west"; }
+    }
+}
+
+fn main() {
+    let heading = Direction.West;
+    println("Heading: " + direction_name(heading));
+}

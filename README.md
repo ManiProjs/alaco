@@ -97,7 +97,7 @@ Put test programs in `tests/` with one `.aco` file per test. Each file is compil
 
 ## Documentation
 
-- [Language guide](docs/language-guide.md) — syntax, types, functions, control flow, structs, imports, and shell expressions.
+- [Language guide](docs/language-guide.md) — syntax, types, functions, control flow, enums and exhaustive matching, structs, imports, and shell expressions.
 - [Standard library reference](docs/standard-library.md) — module APIs, return values, and runtime limitations.
 - [Project workflow](docs/project-workflow.md) — create a project, use the check-run-build cycle, resolve local modules, and interpret diagnostics.
 - [Examples catalog](examples/README.md) — runnable examples grouped by language feature, module, and package workflow, including an intentional diagnostic fixture.
