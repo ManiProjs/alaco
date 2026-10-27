@@ -462,6 +462,28 @@ impl Server {
                 }
             }
         }
+        for (candidate_uri, candidate_source) in self.workspace_sources() {
+            if candidate_uri == uri {
+                continue;
+            }
+            if let Ok(program) = parse(&candidate_source) {
+                for item in program.items {
+                    match item {
+                        Item::Function(function) => {
+                            entries.entry(function.name.clone()).or_insert_with(|| {
+                                (3, format!("{} · workspace function", signature(&function)))
+                            });
+                        }
+                        Item::Struct(structure) => {
+                            entries
+                                .entry(structure.name)
+                                .or_insert_with(|| (22, "Workspace type".into()));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
         let is_member = source[..clamp_char_boundary(source, offset)]
             .trim_end()
             .ends_with('.');
@@ -586,6 +608,17 @@ impl Server {
             return Value::Null;
         };
         let name = token.lexeme.trim();
+        if let Some(indices) = local_symbol_occurrences(source, offset, name)
+            && let Some(index) = indices.iter().copied().find(|&index| {
+                (index > 0 && matches!(tokens[index - 1].kind, TokenKind::Let | TokenKind::Mut))
+                    || tokens
+                        .get(index + 1)
+                        .is_some_and(|next| matches!(next.kind, TokenKind::Colon))
+            })
+        {
+            let declaration = &tokens[index];
+            return json!({"uri":uri,"range":span_range(source,declaration.span.offset(),declaration.span.offset()+declaration.span.len())});
+        }
         for (candidate_uri, candidate_source) in self.workspace_sources() {
             if let Ok(tokens) = lex(&candidate_source) {
                 for (index, candidate) in tokens.iter().enumerate() {
@@ -608,6 +641,25 @@ impl Server {
             return json!([]);
         };
         let name = token.lexeme.trim();
+        if let Some(indices) = local_symbol_occurrences(source, offset, name) {
+            let include_decl = params
+                .pointer("/context/includeDeclaration")
+                .and_then(Value::as_bool)
+                .unwrap_or(true);
+            return json!(indices
+                .into_iter()
+                .filter(|&index| {
+                    include_decl
+                        || !((index > 0
+                            && matches!(tokens[index - 1].kind, TokenKind::Let | TokenKind::Mut))
+                            || tokens.get(index + 1).is_some_and(|next| matches!(next.kind, TokenKind::Colon)))
+                })
+                .map(|index| {
+                    let token = &tokens[index];
+                    json!({"uri":uri,"range":span_range(source,token.span.offset(),token.span.offset()+token.span.len())})
+                })
+                .collect::<Vec<_>>());
+        }
         let include_decl = params
             .pointer("/context/includeDeclaration")
             .and_then(Value::as_bool)
@@ -755,6 +807,24 @@ impl Server {
         {
             return Value::Null;
         }
+
+        // Resolve local bindings before falling back to workspace-wide symbols.
+        // This prevents renaming a shadowed local from changing unrelated locals
+        // with the same spelling in sibling or nested scopes.
+        if let Some(indices) = local_symbol_occurrences(source, offset, old) {
+            let edits = indices
+                .into_iter()
+                .filter_map(|index| {
+                    let token = tokens.get(index)?;
+                    Some(json!({
+                        "range":span_range(source,token.span.offset(),token.span.offset()+token.span.len()),
+                        "newText":new_name
+                    }))
+                })
+                .collect::<Vec<_>>();
+            return json!({"changes":{uri:edits}});
+        }
+
         let mut changes = serde_json::Map::new();
         for (doc_uri, doc_source) in self.workspace_sources() {
             if let Ok(tokens) = lex(&doc_source) {
@@ -1319,6 +1389,213 @@ fn is_declaration(tokens: &[Token], index: usize) -> bool {
     false
 }
 
+/// Return the token indices belonging to the local binding at `offset`.
+/// This is intentionally limited to lexical locals and parameters; top-level
+/// functions, types, imports, and members continue through workspace resolution.
+fn local_symbol_occurrences(source: &str, offset: usize, name: &str) -> Option<Vec<usize>> {
+    #[derive(Clone)]
+    struct Scope {
+        start: usize,
+        end: usize,
+    }
+    #[derive(Clone)]
+    struct Binding {
+        token: usize,
+        start: usize,
+        end: usize,
+    }
+
+    let tokens = lex(source).ok()?;
+    let mut scopes = vec![Scope {
+        start: 0,
+        end: source.len(),
+    }];
+    let mut stack = Vec::<(usize, usize)>::new();
+    let mut brace_scopes = HashMap::<usize, Scope>::new();
+    for (index, token) in tokens.iter().enumerate() {
+        match token.kind {
+            TokenKind::LeftBrace => stack.push((index, token.span.offset())),
+            TokenKind::RightBrace => {
+                if let Some((open_index, start)) = stack.pop() {
+                    let scope = Scope {
+                        start,
+                        end: token.span.offset() + token.span.len(),
+                    };
+                    brace_scopes.insert(open_index, scope.clone());
+                    scopes.push(scope);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let scope_at = |position: usize| -> Scope {
+        scopes
+            .iter()
+            .filter(|scope| scope.start <= position && position <= scope.end)
+            .min_by_key(|scope| scope.end.saturating_sub(scope.start))
+            .cloned()
+            .unwrap_or(Scope {
+                start: 0,
+                end: source.len(),
+            })
+    };
+    let mut bindings = Vec::<Binding>::new();
+
+    // `let name` and `let mut name` bind until the end of the containing block.
+    for (index, token) in tokens.iter().enumerate() {
+        if !matches!(token.kind, TokenKind::Let) {
+            continue;
+        }
+        let mut name_index = index + 1;
+        if tokens
+            .get(name_index)
+            .is_some_and(|t| matches!(t.kind, TokenKind::Mut))
+        {
+            name_index += 1;
+        }
+        let Some(binding_token) = tokens.get(name_index) else {
+            continue;
+        };
+        if binding_token.lexeme == name && matches!(binding_token.kind, TokenKind::Identifier(_)) {
+            let scope = scope_at(token.span.offset());
+            bindings.push(Binding {
+                token: name_index,
+                start: scope.start,
+                end: scope.end,
+            });
+        }
+    }
+
+    // Parameters are visible throughout their function body. Locate the body
+    // brace after each parameter list, then bind identifiers immediately before `:`.
+    for (index, token) in tokens.iter().enumerate() {
+        if !matches!(token.kind, TokenKind::Fn)
+            || !tokens
+                .get(index + 1)
+                .is_some_and(|next| matches!(next.kind, TokenKind::Identifier(_)))
+            || !tokens
+                .get(index + 2)
+                .is_some_and(|next| matches!(next.kind, TokenKind::LeftParen))
+        {
+            continue;
+        }
+        let Some(open_paren) =
+            (index + 1..tokens.len()).find(|&i| matches!(tokens[i].kind, TokenKind::LeftParen))
+        else {
+            continue;
+        };
+        let mut depth = 0usize;
+        let mut close_paren = None;
+        for (i, parameter_token) in tokens.iter().enumerate().skip(open_paren) {
+            match parameter_token.kind {
+                TokenKind::LeftParen => depth += 1,
+                TokenKind::RightParen => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        close_paren = Some(i);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let Some(close_paren) = close_paren else {
+            continue;
+        };
+        let Some(body_open) = (close_paren + 1..tokens.len())
+            .find(|&i| matches!(tokens[i].kind, TokenKind::LeftBrace))
+        else {
+            continue;
+        };
+        let Some(body_scope) = brace_scopes.get(&body_open) else {
+            continue;
+        };
+        for i in open_paren + 1..close_paren {
+            if tokens[i].lexeme == name
+                && matches!(tokens[i].kind, TokenKind::Identifier(_))
+                && tokens
+                    .get(i + 1)
+                    .is_some_and(|t| matches!(t.kind, TokenKind::Colon))
+            {
+                bindings.push(Binding {
+                    token: i,
+                    start: body_scope.start,
+                    end: body_scope.end,
+                });
+            }
+        }
+    }
+
+    let selected = tokens.iter().position(|token| {
+        token.lexeme == name
+            && token.span.offset() <= offset
+            && offset <= token.span.offset() + token.span.len()
+            && matches!(token.kind, TokenKind::Identifier(_))
+    })?;
+    if (selected > 0 && matches!(tokens[selected - 1].kind, TokenKind::Dot))
+        || (tokens
+            .get(selected + 1)
+            .is_some_and(|t| matches!(t.kind, TokenKind::Colon))
+            && selected > 0
+            && matches!(
+                tokens[selected - 1].kind,
+                TokenKind::LeftBrace | TokenKind::Comma
+            ))
+    {
+        return None;
+    }
+    let selected_binding = bindings
+        .iter()
+        .filter(|binding| {
+            binding.token == selected
+                || (binding.start <= tokens[selected].span.offset()
+                    && tokens[selected].span.offset() <= binding.end
+                    && tokens[binding.token].span.offset() <= tokens[selected].span.offset())
+        })
+        .max_by_key(|binding| (binding.start, tokens[binding.token].span.offset()))?;
+    let binding_index = selected_binding.token;
+    let resolves_to_selected = |candidate_index: usize| {
+        let candidate = &tokens[candidate_index];
+        if candidate.lexeme != name || !matches!(candidate.kind, TokenKind::Identifier(_)) {
+            return false;
+        }
+        if candidate_index == binding_index {
+            return true;
+        }
+        // Do not treat member names or struct-literal field labels as local uses.
+        if candidate_index > 0 && matches!(tokens[candidate_index - 1].kind, TokenKind::Dot) {
+            return false;
+        }
+        if tokens
+            .get(candidate_index + 1)
+            .is_some_and(|t| matches!(t.kind, TokenKind::Colon))
+            && candidate_index > 0
+            && matches!(
+                tokens[candidate_index - 1].kind,
+                TokenKind::LeftBrace | TokenKind::Comma
+            )
+        {
+            return false;
+        }
+        let position = candidate.span.offset();
+        let resolved = bindings
+            .iter()
+            .filter(|binding| {
+                binding.start <= position
+                    && position <= binding.end
+                    && tokens[binding.token].span.offset() <= position
+            })
+            .max_by_key(|binding| (binding.start, tokens[binding.token].span.offset()));
+        resolved.is_some_and(|binding| binding.token == binding_index)
+    };
+    Some(
+        (0..tokens.len())
+            .filter(|&index| resolves_to_selected(index))
+            .collect(),
+    )
+}
+
 fn semantic_type(
     kind: &TokenKind,
     function_names: &HashSet<String>,
@@ -1721,6 +1998,58 @@ mod tests {
         }));
         assert_eq!(edit["changes"][uri][0]["newText"].as_str(), Some("welcome"));
         assert_eq!(edit["changes"][uri][1]["newText"].as_str(), Some("welcome"));
+    }
+
+    #[test]
+    fn local_rename_respects_shadowed_bindings() {
+        let source = "fn main() { let value = 1; if true { let value = 2; println(value); } println(value); }";
+        let inner_use = source.find("println(value)").unwrap() + "println(".len();
+        let inner = local_symbol_occurrences(source, inner_use, "value").unwrap();
+        let tokens = lex(source).unwrap();
+        let offsets = inner
+            .iter()
+            .map(|&index| tokens[index].span.offset())
+            .collect::<Vec<_>>();
+        let inner_decl = source.find("let value = 2").unwrap() + "let ".len();
+        let outer_decl = source.find("let value = 1").unwrap() + "let ".len();
+        let outer_use = source.rfind("println(value)").unwrap() + "println(".len();
+        assert!(offsets.contains(&inner_decl));
+        assert!(offsets.contains(&inner_use));
+        assert!(!offsets.contains(&outer_decl));
+        assert!(!offsets.contains(&outer_use));
+    }
+
+    #[test]
+    fn completion_includes_symbols_from_other_workspace_files() {
+        let root =
+            std::env::temp_dir().join(format!("alaco-lsp-completion-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let helper_path = root.join("helpers.aco");
+        std::fs::write(&helper_path, "fn workspace_helper(value: Int) -> Int { return value; }\nstruct WorkspaceThing { value: Int }\n").unwrap();
+        let mut server = Server {
+            root_uri: Some(path_to_uri(&root)),
+            ..Server::default()
+        };
+        let uri = path_to_uri(&root.join("main.aco"));
+        server.documents.insert(
+            uri.clone(),
+            Document {
+                text: "fn main() { work }".into(),
+                version: 1,
+            },
+        );
+        let result = server.completions(&json!({
+            "textDocument":{"uri":uri},"position":{"line":0,"character":12}
+        }));
+        let labels = result["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|item| item["label"].as_str())
+            .collect::<Vec<_>>();
+        assert!(labels.contains(&"workspace_helper"));
+        assert!(labels.contains(&"WorkspaceThing"));
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
