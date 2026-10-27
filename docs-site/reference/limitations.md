@@ -33,6 +33,7 @@ Alaco is a hobby language and an evolving compiler. These limitations are part o
 ## Tooling
 
 - The language server reparses changed documents rather than maintaining an incremental syntax tree.
-- Workspace symbol/reference/rename features scan `.aco` files on demand; identifier matching is not fully scope-aware, so rename may affect unrelated same-named identifiers.
+- Workspace symbol/reference/rename features scan `.aco` files on demand rather than using a persistent semantic index. Local variable and parameter matching is scope-aware, but cross-file top-level symbols still use partly lexical name matching and may not distinguish same-named declarations in every case.
+- Workspace completion includes functions and structs found in `.aco` files under the workspace root; it is not yet filtered by a complete import/reachability model.
 
 For practical examples and the current behavior of each module, see the [standard library reference](/reference/standard-library) and the repository's example catalog.

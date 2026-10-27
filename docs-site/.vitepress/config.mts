@@ -52,6 +52,7 @@ export default defineConfig({
       '/reference/': [
         { text: 'Reference', items: [
           { text: 'CLI commands', link: '/reference/cli' },
+          { text: 'Release downloads', link: '/reference/releases' },
           { text: 'Standard library', link: '/reference/standard-library' },
           { text: 'Project manifest', link: '/reference/manifest' },
           { text: 'Lockfile', link: '/reference/lockfile' },

@@ -1,6 +1,6 @@
 # Alaco documentation
 
-Alaco is a small, statically checked programming language implemented in Rust. Its compiler analyzes `.aco` source files and supports native executable builds through generated C++ plus an evolving JavaScript transpilation target.
+Alaco v0.2.0 is a small, statically checked programming language implemented in Rust. Its compiler analyzes `.aco` source files and supports native executable builds through generated C++ plus an evolving JavaScript transpilation target.
 
 <div class="vp-doc-intro-actions">
   <a class="vp-doc-primary" href="./guide/getting-started">Get started <span>→</span></a>
@@ -14,10 +14,11 @@ Alaco is a small, statically checked programming language implemented in Rust. I
   <a href="./guide/language"><strong>02 · Learn syntax</strong><span>Understand types, functions, control flow, structs, and imports.</span></a>
   <a href="./reference/standard-library"><strong>03 · Use the library</strong><span>Explore the APIs available to Alaco programs.</span></a>
   <a href="./guide/editor-support"><strong>04 · Improve your workflow</strong><span>Connect the language server to your editor.</span></a>
-  <a href="./guide/testing"><strong>05 · Test programs</strong><span>Run focused `.aco` tests and keep regressions visible.</span></a>
-  <a href="./guide/diagnostics"><strong>06 · Troubleshoot</strong><span>Understand compiler stages and diagnose common failures.</span></a>
-  <a href="./guide/dependencies"><strong>07 · Add dependencies</strong><span>Use local packages, Git sources, version constraints, and lockfiles.</span></a>
-  <a href="./guide/build-cache"><strong>08 · Build faster</strong><span>Understand cache decisions and force a fresh native build.</span></a>
+  <a href="./reference/releases"><strong>05 · Install v0.2.0</strong><span>Download compiler builds and the VS Code extension.</span></a>
+  <a href="./guide/testing"><strong>06 · Test programs</strong><span>Run focused `.aco` tests and keep regressions visible.</span></a>
+  <a href="./guide/diagnostics"><strong>07 · Troubleshoot</strong><span>Understand compiler stages and diagnose common failures.</span></a>
+  <a href="./guide/dependencies"><strong>08 · Add dependencies</strong><span>Use local packages, Git sources, version constraints, and lockfiles.</span></a>
+  <a href="./guide/build-cache"><strong>09 · Build faster</strong><span>Understand cache decisions and force a fresh native build.</span></a>
 </div>
 
 ## At a glance
@@ -26,6 +27,8 @@ Alaco is a small, statically checked programming language implemented in Rust. I
 - **Compiler implementation:** Rust
 - **Native output:** generated C++ compiled with a system C++ compiler
 - **JavaScript output:** generated JavaScript for Node.js, with an evolving set of supported features
-- **Editor tooling:** Language Server Protocol, including diagnostics, completion, hover, navigation, and code actions
+- **Editor tooling:** Language Server Protocol, including diagnostics, workspace-aware completion, scope-aware local navigation and rename, hover, and code actions
+
+The current stable release is **v0.2.0**. See the [release downloads](/reference/releases) for platform archives and the VS Code extension.
 
 Alaco is actively evolving. These pages describe the current implementation, including limitations, rather than promising compatibility with Rust, C++, or a complete language specification.
