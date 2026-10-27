@@ -34,6 +34,8 @@ When using an installed `alaco` executable, use the same commands directly. The 
 | `alaco new <name>` | Create a new project with a working entry point. |
 | `alaco init [directory]` | Initialize a project in an existing directory without overwriting an entry point. |
 | `alaco check [file.aco]` | Parse and analyze a source file. Defaults to `src/main.aco` in a project. |
+| `alaco transpile [file.aco]` | Generate JavaScript source without building a native executable. Defaults to a sibling `.js` file. |
+| `alaco transpile [file.aco] --output <path>` | Choose the generated JavaScript output path. |
 | `alaco explain [file.aco]` | Check a file and show diagnostics when errors are found. |
 | `alaco build [file.aco]` | Build a native executable. Project builds go in `target/`. |
 | `alaco build [file.aco] --output <path>` | Build to a specified output path. |

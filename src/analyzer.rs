@@ -436,6 +436,22 @@ impl<'a> Analyzer<'a> {
                     Type::Bool,
                 ),
                 ("__builtin_env_current_dir", vec![], Type::String),
+                ("__builtin_args_count", vec![], Type::Int),
+                ("__builtin_args_get", vec![Type::Int], Type::String),
+                ("__builtin_args_positional_count", vec![], Type::Int),
+                ("__builtin_args_positional", vec![Type::Int], Type::String),
+                ("__builtin_args_has_flag", vec![Type::String], Type::Bool),
+                ("__builtin_args_has_option", vec![Type::String], Type::Bool),
+                (
+                    "__builtin_args_register_option",
+                    vec![Type::String],
+                    Type::Void,
+                ),
+                (
+                    "__builtin_args_option",
+                    vec![Type::String, Type::String],
+                    Type::String,
+                ),
                 (
                     "__builtin_path_join",
                     vec![Type::String, Type::String],

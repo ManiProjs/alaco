@@ -59,6 +59,14 @@ enum CommandKind {
     /// Check an Alaco source file.
     Check { file: Option<PathBuf> },
 
+    /// Transpile an Alaco source file to JavaScript.
+    Transpile {
+        file: Option<PathBuf>,
+
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
+
     /// Explain an error in an Alaco source file.
     Explain { file: Option<PathBuf> },
 
@@ -122,6 +130,10 @@ fn run_cli() -> Result<ExitCode> {
         Some(CommandKind::Init { path }) => init_project(&path),
 
         Some(CommandKind::Check { file }) => check(&resolve_source(file)?),
+
+        Some(CommandKind::Transpile { file, output }) => {
+            transpile(&resolve_source(file)?, output.as_deref())
+        }
 
         Some(CommandKind::Explain { file }) => explain(&resolve_source(file)?),
 
@@ -477,6 +489,40 @@ fn check(file: &Path) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
+fn transpile(file: &Path, requested_output: Option<&Path>) -> Result<ExitCode> {
+    let source = read_source(file)?;
+    let filename = file.display().to_string();
+    let output = requested_output
+        .map(PathBuf::from)
+        .unwrap_or_else(|| file.with_extension("js"));
+
+    if let Some(parent) = output
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent).map_err(|error| {
+            miette::miette!(
+                "failed to create output directory '{}': {error}",
+                parent.display()
+            )
+        })?;
+    }
+
+    let start = Instant::now();
+    println!("  {} {}", "Transpiling".bold(), file.display());
+    let javascript = Compiler::transpile_javascript(&source, &filename)?;
+    fs::write(&output, javascript).map_err(|error| {
+        miette::miette!(
+            "failed to write generated JavaScript to '{}': {error}",
+            output.display()
+        )
+    })?;
+    println!("  {} Generated JavaScript", "✓".green());
+    print_finished(start.elapsed());
+    println!("  {} {}", "→".dimmed(), output.display());
+    Ok(ExitCode::SUCCESS)
+}
+
 fn explain(file: &Path) -> Result<ExitCode> {
     let source = read_source(file)?;
     let filename = file.display().to_string();
@@ -693,7 +739,7 @@ fn format_duration(duration: Duration) -> String {
 mod tests {
     use super::{
         clean_target, create_project_files, default_output_path, discover_tests, format_duration,
-        init_project, temporary_output_path,
+        init_project, temporary_output_path, transpile,
     };
     use std::{fs, path::Path, time::Duration};
 
@@ -771,6 +817,24 @@ mod tests {
                 .to_string_lossy()
                 .starts_with("demo/target/.alaco-run-")
         );
+    }
+
+    #[test]
+    fn transpile_writes_generated_javascript_without_building_an_executable() {
+        let root = test_directory("transpile");
+        fs::create_dir_all(&root).unwrap();
+        let source = root.join("hello.aco");
+        let output = root.join("generated/hello.js");
+        fs::write(&source, "fn main() { println(\"hello\"); }").unwrap();
+
+        let result = transpile(&source, Some(&output)).unwrap();
+
+        assert_eq!(result, std::process::ExitCode::SUCCESS);
+        let generated = fs::read_to_string(&output).unwrap();
+        assert!(generated.contains("function main("));
+        assert!(generated.contains("const println = (...values) => console.log(...values);"));
+        assert!(generated.contains("println(\"hello\")"));
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

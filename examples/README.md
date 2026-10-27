@@ -30,6 +30,7 @@ alaco check examples/type_safety.aco
 | --- | --- |
 | `stdlib.aco` | Math, string, geometry, statistics, units, and validation helpers |
 | `runtime_stdlib.aco` | Runtime filesystem, environment, and path operations; creates and removes temporary test files/directories in the working directory |
+| `cli_args.aco` | Command-line flags, option values, and positional arguments |
 | `json_demo.aco` | JSON validation, top-level typed lookups, and fallback values |
 | `toml_demo.aco` | Validation and reading simple scalar TOML settings |
 | `config_app.aco` | Reading JSON/TOML configuration values and checking environment setup |

@@ -1,0 +1,30 @@
+// Command-line argument parsing. Indices are zero-based and exclude the
+// executable name. Options accept both `--name value` and `--name=value`.
+fn count() -> Int {
+    return __builtin_args_count();
+}
+
+fn get(index: Int) -> String {
+    return __builtin_args_get(index);
+}
+
+fn positional_count() -> Int {
+    return __builtin_args_positional_count();
+}
+
+fn positional(index: Int) -> String {
+    return __builtin_args_positional(index);
+}
+
+fn has_flag(name: String) -> Bool {
+    return __builtin_args_has_flag(name);
+}
+
+fn has_option(name: String) -> Bool {
+    return __builtin_args_has_option(name);
+}
+
+fn option(name: String, fallback: String) -> String {
+    __builtin_args_register_option(name);
+    return __builtin_args_option(name, fallback);
+}

@@ -1,0 +1,23 @@
+import std.args;
+
+fn main() {
+    if args.has_flag("--help") {
+        println("Usage: cli_args [--name VALUE] [--verbose] FILE...");
+        return;
+    }
+
+    let name = args.option("--name", "world");
+    println("Hello, " + name + "!");
+    println("Verbose:");
+    println(args.has_flag("--verbose"));
+    println("Arguments:");
+    println(args.count());
+    println("Positional files:");
+    println(args.positional_count());
+
+    let mut index = 0;
+    loop (repeat args.positional_count()) {
+        println(args.positional(index));
+        index = index + 1;
+    }
+}

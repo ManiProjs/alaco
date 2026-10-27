@@ -19,6 +19,7 @@ struct RuntimeRequirements {
     string: bool,
     fs: bool,
     env: bool,
+    args: bool,
     path: bool,
     json: bool,
     toml: bool,
@@ -37,6 +38,7 @@ impl RuntimeRequirements {
             || self.shell
             || self.fs
             || self.env
+            || self.args
             || self.path
             || self.json
             || self.toml
@@ -51,6 +53,8 @@ pub struct CppCodegen {
     indent: usize,
     module_aliases: HashSet<String>,
     lifetime_variables: HashSet<String>,
+    uses_args: bool,
+    in_main_function: bool,
 }
 
 impl CppCodegen {
@@ -60,6 +64,8 @@ impl CppCodegen {
             indent: 0,
             module_aliases: HashSet::new(),
             lifetime_variables: HashSet::new(),
+            uses_args: false,
+            in_main_function: false,
         }
     }
 
@@ -70,6 +76,7 @@ impl CppCodegen {
     ) -> String {
         self.module_aliases = modules.iter().map(|module| module.alias.clone()).collect();
         let requirements = self.runtime_requirements(ir, modules);
+        self.uses_args = requirements.args;
 
         self.generate_header(&requirements);
         self.generate_runtime(&requirements);
@@ -212,6 +219,7 @@ impl CppCodegen {
             match module.name.as_str() {
                 "std.fs" => requirements.fs = true,
                 "std.env" => requirements.env = true,
+                "std.args" => requirements.args = true,
                 "std.path" => requirements.path = true,
                 "std.json" => requirements.json = true,
                 "std.toml" => requirements.toml = true,
@@ -541,6 +549,11 @@ impl CppCodegen {
             self.push_line("#include <string>");
         }
 
+        if requirements.args {
+            self.push_line("#include <vector>");
+            self.push_line("#include <string>");
+        }
+
         if requirements.json || requirements.toml || requirements.http {
             self.push_line("#include <cctype>");
             self.push_line("#include <cstdio>");
@@ -631,6 +644,10 @@ impl CppCodegen {
 
         if requirements.env {
             self.generate_env_runtime();
+        }
+
+        if requirements.args {
+            self.generate_args_runtime();
         }
 
         if requirements.path {
@@ -761,6 +778,21 @@ impl CppCodegen {
         self.indent -= 1;
         self.push_line("}");
         self.push_line("static std::string __builtin_env_current_dir() { std::error_code ec; auto path = std::filesystem::current_path(ec); return ec ? std::string{} : path.string(); }");
+        self.push_line("");
+    }
+
+    fn generate_args_runtime(&mut self) {
+        self.push_line("static std::vector<std::string> __alaco_args;");
+        self.push_line("static std::vector<std::string> __alaco_value_options;");
+        self.push_line("static void __builtin_args_register_option(const std::string& name) { if (std::find(__alaco_value_options.begin(), __alaco_value_options.end(), name) == __alaco_value_options.end()) __alaco_value_options.push_back(name); }");
+        self.push_line("static bool __alaco_is_value_option(const std::string& arg) { for (const auto& name : __alaco_value_options) if (arg == name || (arg.size() > name.size() && arg.compare(0, name.size(), name) == 0 && arg[name.size()] == '=')) return true; return false; }");
+        self.push_line("static long long __builtin_args_count() { return static_cast<long long>(__alaco_args.size()); }");
+        self.push_line("static std::string __builtin_args_get(long long index) { return index >= 0 && static_cast<std::size_t>(index) < __alaco_args.size() ? __alaco_args[static_cast<std::size_t>(index)] : std::string{}; }");
+        self.push_line("static bool __builtin_args_has_flag(const std::string& name) { return std::find(__alaco_args.begin(), __alaco_args.end(), name) != __alaco_args.end(); }");
+        self.push_line("static bool __builtin_args_has_option(const std::string& name) { for (std::size_t i = 0; i < __alaco_args.size(); ++i) { const auto& arg = __alaco_args[i]; if (arg == name || (arg.size() > name.size() && arg.compare(0, name.size(), name) == 0 && arg[name.size()] == '=')) return true; } return false; }");
+        self.push_line("static std::string __builtin_args_option(const std::string& name, const std::string& fallback) { for (std::size_t i = 0; i < __alaco_args.size(); ++i) { const auto& arg = __alaco_args[i]; if (arg.size() > name.size() && arg.compare(0, name.size(), name) == 0 && arg[name.size()] == '=') return arg.substr(name.size() + 1); if (arg == name) return i + 1 < __alaco_args.size() && (__alaco_args[i + 1].empty() || __alaco_args[i + 1][0] != '-') ? __alaco_args[i + 1] : fallback; } return fallback; }");
+        self.push_line("static long long __builtin_args_positional_count() { long long count = 0; bool options = true; for (std::size_t i = 0; i < __alaco_args.size(); ++i) { const auto& arg = __alaco_args[i]; if (options && arg == \"--\") { options = false; continue; } if (options && arg.size() > 1 && arg[0] == '-') { if (__alaco_is_value_option(arg) && arg.find('=') == std::string::npos && i + 1 < __alaco_args.size()) ++i; continue; } ++count; } return count; }");
+        self.push_line("static std::string __builtin_args_positional(long long index) { if (index < 0) return {}; long long count = 0; bool options = true; for (std::size_t i = 0; i < __alaco_args.size(); ++i) { const auto& arg = __alaco_args[i]; if (options && arg == \"--\") { options = false; continue; } if (options && arg.size() > 1 && arg[0] == '-') { if (__alaco_is_value_option(arg) && arg.find('=') == std::string::npos && i + 1 < __alaco_args.size()) ++i; continue; } if (count++ == index) return arg; } return {}; }");
         self.push_line("");
     }
 
@@ -1191,8 +1223,17 @@ static std::string __builtin_http_post(const std::string& url, const std::string
             .collect::<Vec<_>>()
             .join(", ");
 
+        let params = if function.name == "main" {
+            "int argc, char** argv".to_string()
+        } else {
+            params
+        };
         self.push_line(&format!("{} {}({}) {{", return_type, name, params));
         self.indent += 1;
+        if function.name == "main" && self.uses_args {
+            self.push_line("__alaco_args.clear();");
+            self.push_line("for (int i = 1; i < argc; ++i) __alaco_args.emplace_back(argv[i]);");
+        }
         for parameter in &function.parameters {
             self.push_line(&format!(
                 "{} {} = {};",
@@ -1201,7 +1242,10 @@ static std::string __builtin_http_post(const std::string& url, const std::string
                 self.cpp_identifier(&parameter.name)
             ));
         }
+        let outer_in_main_function = self.in_main_function;
+        self.in_main_function = function.name == "main";
         self.generate_ir_block_contents(&function.body);
+        self.in_main_function = outer_in_main_function;
         if function.name == "main" {
             self.push_line("return 0;");
         }
@@ -1280,7 +1324,13 @@ static std::string __builtin_http_post(const std::string& url, const std::string
                     &value
                         .as_ref()
                         .map(|v| format!("return {};", self.ir_expression(v)))
-                        .unwrap_or_else(|| "return;".to_string()),
+                        .unwrap_or_else(|| {
+                            if self.in_main_function {
+                                "return 0;".to_string()
+                            } else {
+                                "return;".to_string()
+                            }
+                        }),
                 );
             }
             IrStmt::Skip(_) => self.push_line("continue;"),

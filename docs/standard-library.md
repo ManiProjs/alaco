@@ -161,6 +161,22 @@ Import with `import std.env;`.
 
 Use `has` together with `get` when a missing variable must be distinguished from a variable set to an empty string. Environment changes affect the running process and are not a way to modify the parent shell's environment.
 
+## `std.args` — command-line arguments
+
+Import with `import std.args;`. Arguments are captured from the running executable; indices are zero-based and exclude the executable path.
+
+| Function | Behavior |
+| --- | --- |
+| `count()` | Number of raw arguments, including options and positional values. |
+| `get(index: Int)` | Return the raw argument at an index, or `""` when out of range. |
+| `positional_count()` | Count positional arguments, skipping option-like arguments and their following values. `--` ends option parsing. |
+| `positional(index: Int)` | Return a positional argument by zero-based index, or `""` when out of range. |
+| `has_flag(name: String)` | Check for an exact flag token such as `--verbose` or `-v`. |
+| `has_option(name: String)` | Check for an option such as `--output file` or `--output=file`. |
+| `option(name: String, fallback: String)` | Read an option value in either form, returning the fallback when absent. |
+
+Pass the option spelling you expect (for example, `"--output"`). Call `option()` before querying positionals so the parser knows which options consume a following value. This is a lightweight parser: it does not validate unknown options, define a schema, or generate help text. For option values beginning with `-`, prefer the `--name=value` form.
+
 ## `std.path` — lexical path helpers
 
 Import with `import std.path;`. These functions inspect or combine path strings; they do not require the referenced file to exist.
@@ -220,7 +236,7 @@ Import with `import std.http;`.
 | `get(url: String)` | Return the response body for a successful GET request. |
 | `post_json(url: String, body: String)` | POST a body with `Content-Type: application/json` and return the response body. |
 
-No `curl` executable is spawned. Windows uses WinHTTP, macOS uses CFNetwork, and other Unix-like builds use OpenSSL 1.1.0+ for TLS with native sockets for transport. The OpenSSL development headers and libraries must be installed when compiling an HTTP-using program on those Unix-like systems. HTTPS certificate and hostname verification are enabled. Failed requests and non-2xx responses return an empty string, so an empty response cannot be distinguished from a failure. The API does not expose status codes or response headers.
+For native builds, no `curl` executable is spawned: Windows uses WinHTTP, macOS uses CFNetwork, and other Unix-like builds use OpenSSL 1.1.0+ for TLS with native sockets for transport. The OpenSSL development headers and libraries must be installed when compiling an HTTP-using program on those Unix-like systems. HTTPS certificate and hostname verification are enabled. For JavaScript output, the synchronous HTTP helpers use the `curl` executable because the current Alaco API is synchronous while Node.js networking APIs are asynchronous. Failed requests and non-2xx responses return an empty string, so an empty response cannot be distinguished from a failure. The API does not expose status codes or response headers.
 
 Use `is_url` only as a lightweight scheme check, not as complete URL validation. Do not send secrets to untrusted endpoints. Since the API does not expose status codes or headers and uses an empty string for failure, it is best suited to simple requests where that limitation is acceptable.
 
@@ -235,6 +251,7 @@ Runnable examples: `examples/http_demo.aco`, `examples/json_demo.aco`, `examples
 | String composition | `std.string` | Basic helpers; `+` also concatenates strings |
 | File and directory operations | `std.fs` | Some failures use `false`, `-1`, or `""` sentinels |
 | Environment variables and current directory | `std.env` | Changes affect only the running process |
+| Command-line options and positional arguments | `std.args` | Lightweight parser; no schema validation or generated help |
 | Manipulate path strings | `std.path` | Host platform path semantics apply |
 | Validate/read simple JSON | `std.json` | Typed accessors read top-level keys only |
 | Read simple TOML settings | `std.toml` | Supports a limited subset, not full TOML 1.0 |

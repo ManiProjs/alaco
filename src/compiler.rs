@@ -11,6 +11,7 @@ use crate::{
     analyzer::Analyzer,
     ast::{Item, Program},
     codegen::cpp::CppCodegen,
+    codegen::javascript::JavaScriptCodegen,
     lexer::Lexer,
     parser::Parser,
     stdlib::{LoadedModule, Stdlib},
@@ -64,6 +65,15 @@ impl Compiler {
         let generator = CppCodegen::new();
 
         Ok(generator.generate_with_modules(&ir, &unit.modules))
+    }
+
+    /// Transpile an Alaco source file into JavaScript source code.
+    pub fn transpile_javascript(source: &str, filename: &str) -> Result<String> {
+        let unit = Self::parse_unit(source, filename)?;
+        let ir = Analyzer::new(&unit.modules)
+            .analyze(&unit.program)
+            .map_err(|error| Self::report(error, filename, source))?;
+        Ok(JavaScriptCodegen::new().generate_with_modules(&ir, &unit.modules))
     }
 
     /// Build an Alaco source file into a native executable.
@@ -281,8 +291,52 @@ impl Compiler {
 #[cfg(test)]
 mod tests {
     use crate::analyzer::Analyzer;
+    use std::process::Command;
 
     use super::Compiler;
+
+    #[test]
+    fn javascript_backend_executes_standard_library_runtime_helpers() {
+        let source = r#"
+            import std.json;
+            import std.toml;
+            import std.path;
+            import std.fs;
+            import std.env;
+            import std.timing;
+
+            fn main() {
+                println(json.is_valid("{\"name\":\"Alaco\",\"count\":7}"));
+                println(json.get_string("{\"name\":\"Alaco\"}", "name", "fallback"));
+                println(json.get_int("{\"count\":7}", "count", 0));
+                println(toml.is_valid("name = \"Alaco\"\ncount = 7\nenabled = true"));
+                println(toml.get_string("name = \"Alaco\"", "name", "fallback"));
+                println(path.basename("/tmp/demo.aco"));
+                println(path.extension("/tmp/demo.aco"));
+                println(env.has("PATH"));
+                println(timing.unix_seconds() > 0);
+                println(fs.write_text("alaco-js-runtime-test.tmp", "ok"));
+                println(fs.read_text("alaco-js-runtime-test.tmp"));
+                println(fs.remove("alaco-js-runtime-test.tmp"));
+            }
+        "#;
+        let javascript = Compiler::transpile_javascript(source, "javascript_runtime_test.aco")
+            .expect("runtime sample should transpile");
+        let result = Command::new("node")
+            .arg("-e")
+            .arg(javascript)
+            .output()
+            .expect("Node.js is required to test JavaScript runtime helpers");
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&result.stdout).replace("\r\n", "\n"),
+            "true\nAlaco\n7\ntrue\nAlaco\ndemo.aco\naco\ntrue\ntrue\ntrue\nok\ntrue\n"
+        );
+    }
 
     #[test]
     fn parameterized_and_tuple_types_are_parsed_checked_and_lowered() {
@@ -1252,6 +1306,70 @@ struct Person {
             temporary_member.is_err(),
             "a temporary is not an assignment target"
         );
+    }
+
+    #[test]
+    fn command_line_argument_parser_compiles_and_runs() {
+        let source = r#"
+            import std.args;
+
+            fn main() {
+                println(args.count());
+                println(args.has_flag("--verbose"));
+                println(args.has_option("--output"));
+                println(args.option("--output", "default.txt"));
+                println(args.positional_count());
+                println(args.positional(0));
+                println(args.positional(1));
+                println(args.get(99));
+            }
+        "#;
+        let output_path =
+            std::env::temp_dir().join(format!("alaco_args_integration_{}", std::process::id()));
+        Compiler::build(source, "args_integration_test.aco", &output_path)
+            .expect("the args standard library should compile to C++");
+
+        let output = std::process::Command::new(&output_path)
+            .args([
+                "--verbose",
+                "input.txt",
+                "--output",
+                "result.txt",
+                "tail.txt",
+            ])
+            .output()
+            .expect("the generated test executable should run");
+        let _ = std::fs::remove_file(&output_path);
+
+        assert!(output.status.success());
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout),
+            "5\ntrue\ntrue\nresult.txt\n2\ninput.txt\ntail.txt\n\n"
+        );
+    }
+
+    #[test]
+    fn bare_return_from_main_compiles_and_exits_successfully() {
+        let source = r#"
+            fn main() {
+                if true {
+                    return;
+                }
+                println("unreachable");
+            }
+        "#;
+        let output_path =
+            std::env::temp_dir().join(format!("alaco_main_bare_return_{}", std::process::id()));
+        Compiler::build(source, "main_bare_return_test.aco", &output_path)
+            .expect("a bare return in main should compile to a successful C++ return");
+
+        let output = std::process::Command::new(&output_path)
+            .output()
+            .expect("the generated test executable should run");
+        let _ = std::fs::remove_file(&output_path);
+
+        assert!(output.status.success());
+        assert!(output.stdout.is_empty());
     }
 
     #[test]
