@@ -1252,7 +1252,7 @@ fn diagnostics_for(source: &str, uri: &str) -> Vec<Value> {
     }
     match Compiler::check(source, &uri_to_path(uri)) {
         Ok(()) => Vec::new(),
-        Err(report) => report.chain().find_map(|cause| cause.downcast_ref::<AlacoError>()).map(|error| vec![diagnostic_from_error(error, source)]).unwrap_or_else(|| vec![json!({"range":span_range(source,0,0),"severity":1,"source":"alaco","code":"alaco::internal","message":report.to_string()})]),
+        Err(report) => report.chain().find_map(|cause| cause.downcast_ref::<AlacoError>()).map(|error| vec![diagnostic_from_error(error, source)]).unwrap_or_else(|| vec![json!({"range":span_range(source,source.len(),source.len()),"severity":1,"source":"alaco","code":"alaco::internal","message":report.to_string()})]),
     }
 }
 
@@ -1265,11 +1265,43 @@ fn diagnostic_from_error(error: &AlacoError, source: &str) -> Value {
     let span = diagnostic
         .labels()
         .and_then(|mut labels| labels.next())
-        .map(|label| *label.inner());
-    let (start, end) = span
+        .map(|label| *label.inner())
         .map(|s| (s.offset(), s.offset() + s.len()))
-        .unwrap_or((0, 0));
+        .or_else(|| fallback_diagnostic_range(error, source))
+        // Never report an unlocated error at byte zero: EOF is the least
+        // misleading insertion point when an error genuinely has no span.
+        .unwrap_or((source.len(), source.len()));
+    let (start, end) = span;
     json!({"range":span_range(source,start,end),"severity":1,"source":"alaco","code":code,"message":error.to_string(),"data":{"help":error.explanation().map(|(_,fix)|fix)}})
+}
+
+fn fallback_diagnostic_range(error: &AlacoError, source: &str) -> Option<(usize, usize)> {
+    match error {
+        // Missing `main` is a whole-program error, so point to where the
+        // declaration should be added rather than the start of the file.
+        AlacoError::MissingMain => Some((source.len(), source.len())),
+        // IR invariant diagnostics include the originating AST byte range.
+        AlacoError::InternalIrInvariant { message } => {
+            let range = message.split_once(" at ")?.1;
+            let (start, end) = range.split_once("..")?;
+            let start = start.parse::<usize>().ok()?.min(source.len());
+            let end = end.parse::<usize>().ok()?.min(source.len()).max(start);
+            Some((start, end))
+        }
+        // Module-loading errors can be associated with their import name.
+        AlacoError::StdlibLoadError { module, .. } => source
+            .find(module)
+            .map(|start| (start, start + module.len())),
+        // Some analyzer errors are intentionally spanless (for example,
+        // whole-program checks). Prefer a named token from the diagnostic to
+        // a misleading highlight at the beginning of the document.
+        AlacoError::Analysis { message, .. } => message
+            .split(['`', '\''])
+            .filter(|part| !part.is_empty())
+            .filter_map(|part| source.find(part).map(|start| (start, start + part.len())))
+            .max_by_key(|(start, end)| end - start),
+        _ => None,
+    }
 }
 
 fn lex(source: &str) -> Result<Vec<Token>, AlacoError> {
@@ -1897,6 +1929,22 @@ mod tests {
             "semantic diagnostics should be published: {semantic:?}"
         );
         assert_eq!(semantic[0]["severity"], 1);
+    }
+
+    #[test]
+    fn diagnostics_without_labels_do_not_point_to_the_start_of_the_file() {
+        let source = "fn helper() {}\n";
+        let missing_main = diagnostic_from_error(&AlacoError::MissingMain, source);
+        assert_eq!(missing_main["code"], "alaco::analysis::missing_main");
+        assert_eq!(missing_main["range"]["start"]["line"], 1);
+        assert_eq!(missing_main["range"]["start"]["character"], 0);
+
+        let invariant = AlacoError::InternalIrInvariant {
+            message: "semantic analysis omitted a type annotation at 3..7".into(),
+        };
+        let diagnostic = diagnostic_from_error(&invariant, "abcdefgh");
+        assert_eq!(diagnostic["range"]["start"]["character"], 3);
+        assert_eq!(diagnostic["range"]["end"]["character"], 7);
     }
 
     #[test]
