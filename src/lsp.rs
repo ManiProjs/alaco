@@ -463,12 +463,94 @@ impl Server {
                 }
             }
         }
+        // Offer local bindings only when they are declared before the cursor and
+        // live in the cursor's lexical scope. Arbitrary identifiers elsewhere in
+        // the file are not useful completions (and often are typos).
         if let Ok(tokens) = lex(source) {
-            for token in tokens {
-                if let TokenKind::Identifier(name) = token.kind {
-                    entries
-                        .entry(name.clone())
-                        .or_insert((6, "Identifier in this document".into()));
+            let mut braces = Vec::<(usize, usize)>::new();
+            let mut scope_stack = Vec::<(usize, usize)>::new();
+            let mut brace_pairs = HashMap::<usize, usize>::new();
+            for (index, token) in tokens.iter().enumerate() {
+                match token.kind {
+                    TokenKind::LeftBrace => scope_stack.push((index, token.span.offset())),
+                    TokenKind::RightBrace => {
+                        if let Some((open, start)) = scope_stack.pop() {
+                            brace_pairs.insert(open, token.span.offset() + token.span.len());
+                            braces.push((start, token.span.offset() + token.span.len()));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            for (open, start) in scope_stack.drain(..) {
+                brace_pairs.insert(open, source.len());
+                braces.push((start, source.len()));
+            }
+            let cursor_scopes = braces
+                .iter()
+                .filter(|(start, end)| *start <= offset && offset <= *end)
+                .map(|(start, end)| (*start, *end))
+                .collect::<HashSet<_>>();
+            for (index, token) in tokens.iter().enumerate() {
+                if token.span.offset() >= offset || !matches!(token.kind, TokenKind::Let) {
+                    continue;
+                }
+                let mut name_index = index + 1;
+                if tokens
+                    .get(name_index)
+                    .is_some_and(|t| matches!(t.kind, TokenKind::Mut))
+                {
+                    name_index += 1;
+                }
+                let Some(binding) = tokens.get(name_index) else {
+                    continue;
+                };
+                let scope = braces
+                    .iter()
+                    .filter(|(start, end)| {
+                        *start <= token.span.offset() && token.span.offset() <= *end
+                    })
+                    .min_by_key(|(start, end)| end - start)
+                    .copied();
+                if scope.is_some_and(|scope| cursor_scopes.contains(&scope))
+                    && matches!(binding.kind, TokenKind::Identifier(_))
+                {
+                    entries.insert(binding.lexeme.clone(), (6, "Local variable".into()));
+                }
+            }
+            // Parameters are available anywhere in their function body.
+            for (index, token) in tokens.iter().enumerate() {
+                if !matches!(token.kind, TokenKind::Fn) {
+                    continue;
+                }
+                let Some(open) = (index + 2..tokens.len())
+                    .find(|&i| matches!(tokens[i].kind, TokenKind::LeftParen))
+                else {
+                    continue;
+                };
+                let Some(close) = (open + 1..tokens.len())
+                    .find(|&i| matches!(tokens[i].kind, TokenKind::RightParen))
+                else {
+                    continue;
+                };
+                let Some(body) = (close + 1..tokens.len())
+                    .find(|&i| matches!(tokens[i].kind, TokenKind::LeftBrace))
+                else {
+                    continue;
+                };
+                let body_start = tokens[body].span.offset();
+                let body_end = brace_pairs.get(&body).copied().unwrap_or(usize::MAX);
+                if body_start <= offset && offset <= body_end {
+                    for i in open + 1..close {
+                        if matches!(tokens[i].kind, TokenKind::Identifier(_))
+                            && tokens
+                                .get(i + 1)
+                                .is_some_and(|t| matches!(t.kind, TokenKind::Colon))
+                        {
+                            entries
+                                .insert(tokens[i].lexeme.clone(), (6, "Function parameter".into()));
+                        }
+                    }
                 }
             }
         }
@@ -499,11 +581,115 @@ impl Server {
                 }
             }
         }
-        let is_member = source[..clamp_char_boundary(source, offset)]
-            .trim_end()
-            .ends_with('.');
-        let items = entries.into_iter().filter(|(label, _)| label.starts_with(&prefix) || (is_member && label.contains('.'))).map(|(label, (kind, detail))| {
-            json!({"label":label,"kind":kind,"detail":detail,"sortText":format!("{:02}-{label}",kind),"insertText":label,"data":{"uri":uri}})
+        let prefix_start = offset.saturating_sub(prefix.len());
+        let before_prefix = &source[..clamp_char_boundary(source, prefix_start)];
+        // After `import std.` the user is choosing a module, not a member of
+        // an already imported module. Keep this list restricted to std modules
+        // even when the prefix is empty, so functions like `math.gcd` never leak
+        // into the module-name suggestions.
+        let current_line_start = before_prefix.rfind('\n').map_or(0, |index| index + 1);
+        let current_line = &source[current_line_start..clamp_char_boundary(source, offset)];
+        if current_line.trim_start().starts_with("import std.") && !current_line.contains(';') {
+            let modules = [
+                "env",
+                "fs",
+                "geometry",
+                "http",
+                "io",
+                "json",
+                "math",
+                "path",
+                "stats",
+                "string",
+                "timing",
+                "toml",
+                "units",
+                "validation",
+            ];
+            let items = modules
+                .iter()
+                .filter(|module| module.starts_with(&prefix))
+                .map(|module| {
+                    json!({
+                        "label":module,
+                        "kind":9,
+                        "detail":"Alaco standard library module",
+                        "sortText":format!("09-{module}"),
+                        "insertText":module,
+                        "data":{"uri":uri}
+                    })
+                })
+                .collect::<Vec<_>>();
+            return json!({"isIncomplete":false,"items":items});
+        }
+        let is_member = before_prefix.trim_end().ends_with('.');
+        let receiver = if is_member {
+            before_prefix
+                .trim_end()
+                .strip_suffix('.')
+                .unwrap_or("")
+                .trim_end()
+                .chars()
+                .rev()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect::<String>()
+                .chars()
+                .rev()
+                .collect::<String>()
+        } else {
+            String::new()
+        };
+        let enum_variants = lex(source).ok().and_then(|tokens| {
+            let (index, _) = tokens.iter().enumerate().find(|(index, token)| {
+                matches!(token.kind, TokenKind::Enum)
+                    && tokens
+                        .get(*index + 1)
+                        .is_some_and(|name| name.lexeme == receiver)
+            })?;
+            let open = (index + 2..tokens.len())
+                .find(|&index| matches!(tokens[index].kind, TokenKind::LeftBrace))?;
+            let mut variants = Vec::new();
+            for token in tokens.iter().skip(open + 1) {
+                if matches!(token.kind, TokenKind::RightBrace) {
+                    break;
+                }
+                if let TokenKind::Identifier(name) = &token.kind {
+                    variants.push(name.clone());
+                }
+            }
+            Some(variants)
+        });
+        if is_member && let Some(variants) = &enum_variants {
+            let items = variants.iter().filter(|variant| variant.starts_with(&prefix)).map(|variant| {
+                json!({"label":variant,"kind":20,"detail":format!("Variant of {receiver}"),"sortText":format!("20-{variant}"),"insertText":variant,"data":{"uri":uri}})
+            }).collect::<Vec<_>>();
+            return json!({"isIncomplete":false,"items":items});
+        }
+        let candidates = entries
+            .into_iter()
+            .filter_map(|(label, (kind, detail))| {
+                if is_member {
+                    if let Some(variants) = &enum_variants {
+                        return variants
+                            .iter()
+                            .filter(|variant| variant.starts_with(&prefix))
+                            .find(|variant| **variant == label)
+                            .map(|variant| (variant.clone(), kind, detail, variant.clone()));
+                    }
+                    let member = label.strip_prefix(&format!("{receiver}."))?;
+                    if member.starts_with(&prefix) {
+                        return Some((member.to_string(), kind, detail, member.to_string()));
+                    }
+                    None
+                } else if label.starts_with(&prefix) {
+                    Some((label.clone(), kind, detail, label))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        let items = candidates.into_iter().map(|(label, kind, detail, insert_text)| {
+            json!({"label":label,"kind":kind,"detail":detail,"sortText":format!("{:02}-{label}",kind),"insertText":insert_text,"data":{"uri":uri}})
         }).collect::<Vec<_>>();
         json!({"isIncomplete":false,"items":items})
     }
@@ -2047,6 +2233,121 @@ mod tests {
         assert!(labels.contains(&"calculate"));
         assert!(labels.contains(&"println"));
         assert!(labels.contains(&"std.math"));
+    }
+
+    #[test]
+    fn completions_offer_visible_locals_without_unrelated_identifiers() {
+        let mut server = Server::default();
+        let uri = "file:///locals.aco";
+        let source = "fn main() { let hello = 1; println(hel); let hidden = 2; }";
+        server.documents.insert(
+            uri.into(),
+            Document {
+                text: source.into(),
+                version: 1,
+            },
+        );
+        let result = server.completions(&json!({
+            "textDocument":{"uri":uri},"position":{"line":0,"character":source.find("hel)").unwrap() + 3}
+        }));
+        let labels = result["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|item| item["label"].as_str())
+            .collect::<Vec<_>>();
+        assert!(labels.contains(&"hello"));
+        assert!(!labels.contains(&"hidden"));
+    }
+
+    #[test]
+    fn member_completions_are_filtered_to_enum_variants_or_module_members() {
+        let mut server = Server::default();
+        let uri = "file:///members.aco";
+        let source = "enum Direction { North, South }\nfn main() { Direction.No }";
+        server.documents.insert(
+            uri.into(),
+            Document {
+                text: source.into(),
+                version: 1,
+            },
+        );
+        let result = server.completions(&json!({
+            "textDocument":{"uri":uri},"position":{"line":1,"character":source.lines().nth(1).unwrap().find("Direction.No").unwrap() + "Direction.No".len()}
+        }));
+        let labels = result["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|item| item["label"].as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(labels, vec!["North"]);
+
+        let source = "fn main() { math.gc }";
+        server.documents.insert(
+            uri.into(),
+            Document {
+                text: source.into(),
+                version: 1,
+            },
+        );
+        let result = server.completions(&json!({
+            "textDocument":{"uri":uri},"position":{"line":0,"character":source.find("math.gc").unwrap() + "math.gc".len()}
+        }));
+        let labels = result["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|item| item["label"].as_str())
+            .collect::<Vec<_>>();
+        assert!(labels.contains(&"gcd"));
+        assert!(!labels.contains(&"std.math"));
+    }
+
+    #[test]
+    fn import_std_completion_only_suggests_module_names() {
+        let mut server = Server::default();
+        let uri = "file:///imports.aco";
+        for (source, expected) in [
+            (
+                "import std.",
+                vec![
+                    "env",
+                    "fs",
+                    "geometry",
+                    "http",
+                    "io",
+                    "json",
+                    "math",
+                    "path",
+                    "stats",
+                    "string",
+                    "timing",
+                    "toml",
+                    "units",
+                    "validation",
+                ],
+            ),
+            ("import std.ma", vec!["math"]),
+        ] {
+            server.documents.insert(
+                uri.into(),
+                Document {
+                    text: source.into(),
+                    version: 1,
+                },
+            );
+            let result = server.completions(&json!({
+                "textDocument":{"uri":uri},"position":{"line":0,"character":source.len()}
+            }));
+            let labels = result["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|item| item["label"].as_str())
+                .collect::<Vec<_>>();
+            assert_eq!(labels, expected, "source: {source}");
+        }
     }
 
     #[test]
