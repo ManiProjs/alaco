@@ -28,8 +28,6 @@ colors = { git = "https://github.com/example/colors-alaco.git", version = "^1.2.
 
 The entry path must be relative and point to a `.aco` file inside the package. Run `alaco manifest` to validate and inspect the manifest. Add or edit dependency declarations directly in the `[dependencies]` table; the current CLI does not provide an `alaco add` command. When a dependency is resolved during a build, Git commit metadata is recorded in `Alaco.lock`.
 
-## Current package boundaries
-
 ## Dependency source fields
 
 | Field | Applies to | Meaning |

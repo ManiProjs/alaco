@@ -15,7 +15,7 @@ The compiler exposes commands for project setup, checking, building, execution, 
 | `alaco transpile [file.aco] --output <path>` | Choose the generated JavaScript output path. |
 | `alaco test [path]` | Build and run `.aco` test programs in a directory or file. |
 | `alaco clean` | Remove generated project build artifacts. |
-| `alaco doctor` | Check the C++ compiler and standard library setup. |
+| `alaco doctor` | Check whether the compiler's native build tools and standard library are available. |
 | `alaco manifest` | Validate and display the current package manifest. |
 | `alaco lsp` | Start the Language Server Protocol server over standard input/output. |
 | `alaco --help` | Show the command list and usage. |
@@ -68,3 +68,5 @@ This removes generated artifacts from the current project's `target/` directory.
 ## Exit status and diagnostics
 
 Commands signal failure through a non-success process exit status. Semantic diagnostics use stable `alaco::analysis::*` codes and include source ranges when the compiler has location information. `check` validates Alaco source, while `build` and `run` additionally depend on the generated C++ and native toolchain.
+
+The compiler and AlacoUp both provide a `doctor` command, but they check different layers. `alaco doctor` checks the compiler's build prerequisites, including the C++ compiler and standard library. `alacoup doctor` checks the manager installation, active compiler version, standard-library location, `PATH`, common native tools, and manager update status. AlacoUp manages installations and forwards compiler commands; it does not replace the compiler. See [Release downloads](/reference/releases) for the manager's commands.

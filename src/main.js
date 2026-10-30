@@ -5,7 +5,7 @@ const storedTheme = localStorage.getItem('alaco-theme');
 const preferredTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 const applyTheme = (theme) => {
   document.documentElement.dataset.theme = theme;
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#121722' : '#ffffff');
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#111111' : '#ffffff');
   themeButton?.setAttribute('aria-label', `Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`);
   if (themeButton) themeButton.innerHTML = `${theme === 'dark' ? '☀' : '◐'} <span>${theme === 'dark' ? 'Light' : 'Dark'}</span>`;
 };

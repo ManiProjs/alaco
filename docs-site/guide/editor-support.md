@@ -4,13 +4,13 @@ Alaco ships a standalone Language Server Protocol (LSP) server in the `alaco` ex
 
 ## Start the server
 
-Build the compiler once, then configure your editor to run:
+Install Alaco using [Getting started](/guide/getting-started). AlacoUp manages the compiler installation; editors start the compiler's language server through the `alaco` launcher:
 
 ```sh
 alaco lsp
 ```
 
-If you have built the compiler but have not installed it yet, use the executable directly at `target/debug/alaco lsp` (or `target/release/alaco lsp` for a release build).
+AlacoUp is not the language server; it installs and selects the Alaco compiler version that provides `alaco lsp`. No compiler source build is required.
 
 ## Editor features
 
@@ -33,7 +33,7 @@ The **Alaco Language Support** extension provides `.aco` syntax highlighting, sn
 
 1. Download [`alaco-language-0.2.0.vsix`](https://github.com/ManiProjs/alaco/releases/download/v0.2.0/alaco-language-0.2.0.vsix) from the [v0.2.0 release page](https://github.com/ManiProjs/alaco/releases/tag/v0.2.0).
 2. In VS Code, open **Extensions**, select the **…** menu, choose **Install from VSIX…**, and select the downloaded file.
-3. Install the Alaco `alaco` executable separately and ensure it is on `PATH`.
+3. Install Alaco using [Getting started](/guide/getting-started). Ensure `~/.alacoup/bin` is on `PATH` so the `alaco` launcher managed by AlacoUp is available.
 4. If the executable is not on `PATH` or has a custom name/location, set `alaco.executable` in VS Code settings to its full path. The extension adds the `lsp` subcommand itself.
 
 The extension's `alaco.languageServer.enabled` setting can disable the language server while leaving syntax highlighting and the compiler commands available. The **Alaco: Check Current File**, **Alaco: Build Current File**, and **Alaco: Run Current File** commands use the configured executable.

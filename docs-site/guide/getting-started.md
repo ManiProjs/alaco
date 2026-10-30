@@ -1,24 +1,33 @@
 # Getting started
 
-This guide takes you from a source checkout to a running Alaco program.
+This guide takes you from a fresh machine to a running Alaco program. AlacoUp manages Alaco compiler installations; you use the `alaco` command to create, check, run, and build programs. You do not need to clone Alaco or install Rust.
 
 ## 1. Install prerequisites
 
 You need:
 
-- **Rust and Cargo** for the one-time compiler installation from source.
+- **AlacoUp**, the Alaco toolchain manager. Its bootstrap installer installs AlacoUp and then uses it to install the latest stable Alaco compiler and standard library.
 - **A C++ compiler** supported by your platform for native `build` and `run` commands.
 - **Node.js** only if you want to execute programs transpiled to JavaScript.
 
-Clone the repository and install the `alaco` executable:
+Install AlacoUp. On macOS and x86-64 Linux, review the [installer script](https://github.com/ManiProjs/alacoup/blob/main/install.sh), then run:
 
 ```sh
-git clone https://github.com/ManiProjs/alaco.git
-cd alaco
-cargo install --path .
+curl --fail --location --proto '=https' --tlsv1.2 \\
+  https://raw.githubusercontent.com/ManiProjs/alacoup/main/install.sh | sh
 ```
 
-Run `alaco doctor` to check the native compiler setup. The `cargo install --path .` step is only for installing the compiler from its source repository; day-to-day commands use the installed `alaco` executable.
+On Windows PowerShell, review the [PowerShell installer](https://github.com/ManiProjs/alacoup/blob/main/install.ps1), then run `irm https://raw.githubusercontent.com/ManiProjs/alacoup/main/install.ps1 | iex`. The installer installs AlacoUp and uses it to install the latest stable Alaco compiler. Rust is not required. If the commands are not found afterward, add `~/.alacoup/bin` to your `PATH` and open a new shell.
+
+Verify the installation and check your native build tools:
+
+```sh
+alacoup --version
+alacoup doctor
+alaco --help
+```
+
+Use `alacoup install VERSION` to install a specific compiler version, `alacoup list` to list installed versions, and `alacoup use VERSION` to activate one. AlacoUp provides the `alaco` launcher used for everyday compiler commands. See [Release downloads](/reference/releases) for details.
 
 ## 2. Create a project
 
@@ -46,9 +55,9 @@ alaco run
 alaco build
 ```
 
-- `check` parses and analyzes source without producing a native executable.
-- `run` builds a temporary native executable, runs it, and cleans up the temporary output.
-- `build` leaves the executable in the project's `target/` directory unless you choose an explicit output path.
+- `alaco check` parses and analyzes source without producing a native executable.
+- `alaco run` builds a temporary native executable, runs it, and cleans up the temporary output.
+- `alaco build` leaves the executable in the project's `target/` directory unless you choose an explicit output path.
 
 A successful check means the Alaco front end accepted the program. Native compilation can still fail later if the generated C++ or the platform toolchain encounters a problem.
 
@@ -58,10 +67,10 @@ Try changing `println` to `printl`, then run `check` again. The semantic analyze
 
 ## 5. Transpile to JavaScript
 
-With `alaco` installed and the Alaco repository available for its example source, run:
+From the `hello` project created above, transpile its entry point:
 
 ```sh
-alaco transpile examples/javascript.aco --output hello.js
+alaco transpile src/main.aco --output hello.js
 node hello.js
 ```
 

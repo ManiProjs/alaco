@@ -29,3 +29,5 @@ The compiler is statically checked: it analyzes types and names before generatin
 </div>
 
 The compiler is evolving, so these pages describe the implemented subset rather than promising compatibility with Rust, C++, or a complete language specification.
+
+For a compact syntax inventory, see the [Language reference](/reference/language). For target-specific behavior, see [Target compatibility](/reference/compatibility).

@@ -5,7 +5,7 @@ Alaco is a hobby language and an evolving compiler. These limitations are part o
 ## Language and type system
 
 - The built-in type system is deliberately small (`Int`, `Float`, `Bool`, `String`, and supported struct types). Do not assume Rust/C++ generics or broad implicit conversions.
-- The documented loop form is `loop (repeat count)`; common constructs such as `while`, `break`, and advanced pattern matching are not generally available.
+- Loops use `loop (repeat count)` or `loop (while condition)`. C-style `for`, standalone `while`, and `break` are not part of the documented loop syntax.
 - Interpolation currently inserts variable names, rather than arbitrary expressions.
 - `when` checks are synchronous checkpoints in a lexical block, not asynchronous reactive tasks.
 - Timed variables use a timer thread per variable in the native implementation and are intended for short-lived values, not thousands of tiny-lived locals.
@@ -14,7 +14,7 @@ Alaco is a hobby language and an evolving compiler. These limitations are part o
 
 - JSON helpers validate JSON and access selected top-level typed values; they do not expose a dynamic JSON tree API.
 - TOML helpers implement a subset of scalar settings and are not a complete TOML 1.0 parser.
-- HTTP helpers expose response bodies but do not provide a full request/response abstraction with status and headers.
+- HTTP structured response helpers expose status, body, success, and error, but not response headers or an asynchronous request API. The body-only helpers still use an empty string for transport failures and non-2xx responses.
 - Several APIs return a sentinel such as an empty string or `-1` on failure rather than a structured error type.
 
 ## Packages and modules

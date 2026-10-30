@@ -2,10 +2,16 @@
 
 The current stable release is **Alaco v0.2.0**, published on October 27, 2026.
 
+The recommended way to install and manage Alaco compiler versions is [AlacoUp](https://github.com/ManiProjs/alacoup). AlacoUp is a toolchain manager: it downloads and installs published Alaco releases, keeps multiple versions, switches the active version, and removes inactive versions. It does not replace the Alaco compiler or define the language's project commands. Its bootstrap installer installs AlacoUp and then runs `alacoup install` to install the latest stable Alaco release and standard library. Rust and Cargo are not required. Follow the [AlacoUp installation instructions](https://github.com/ManiProjs/alacoup#install-alacoup-and-alaco) for macOS, Linux, and Windows.
+
+Use `alacoup install` for the latest stable compiler, `alacoup install 0.2.0` for an exact version, `alacoup list` to see installed versions, and `alacoup use VERSION` to switch versions. Once a version is active, use the `alaco` command for compiler and project operations such as `alaco new`, `alaco check`, `alaco run`, and `alaco build`.
+
 - [Open the v0.2.0 GitHub Release](https://github.com/ManiProjs/alaco/releases/tag/v0.2.0) for all downloads, checksums, and installation notes.
 - [Download the VS Code extension (`alaco-language-0.2.0.vsix`)](https://github.com/ManiProjs/alaco/releases/download/v0.2.0/alaco-language-0.2.0.vsix).
 
 ## Available compiler archives
+
+These archives are the Alaco compiler releases consumed by AlacoUp. They are also available for users who prefer to install the compiler manually.
 
 Release CI publishes binary-only and combined archives for these target platforms:
 

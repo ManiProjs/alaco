@@ -131,15 +131,15 @@ h1 { margin-top: 26px; font-size: clamp(45px, 5.2vw, 68px); line-height: 1.07; f
 :root[data-theme='dark'] {
   color-scheme: dark;
   color: #f0f4fc;
-  background: #121722;
+  background: #111111;
   --ink: #f0f4fc;
   --muted: #b1bdd1;
-  --line: #30394a;
-  --paper: #171e2b;
-  --soft: #1c2535;
+  --line: #353535;
+  --paper: #1a1a1a;
+  --soft: #242424;
   --accent: #8bb0ff;
   --accent-hover: #a7c3ff;
-  --accent-soft: #263959;
+  --accent-soft: #303030;
   --accent-ink: #d7e4ff;
   --peach: #3b302b;
   --shadow: 0 18px 55px #00000035;
@@ -155,7 +155,7 @@ h1 { margin-top: 26px; font-size: clamp(45px, 5.2vw, 68px); line-height: 1.07; f
 :root[data-theme='dark'] .code-orange { color: #ffc18c; }
 :root[data-theme='dark'] .code-green { color: #9fe0b5; }
 :root[data-theme='dark'] .code-number { color: #ffad8b; }
-:root[data-theme='dark'] .quickstart-band { background: #0c111b; }
+:root[data-theme='dark'] .quickstart-band { background: #151515; }
 :root[data-theme='dark'] .feature-card:hover { border-color: #4d6590; box-shadow: 0 12px 28px #00000025; }
 :root[data-theme='dark'] .symbol-peach { color: #ffd0a9; }
 

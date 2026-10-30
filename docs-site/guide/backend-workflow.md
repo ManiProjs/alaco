@@ -73,7 +73,7 @@ Do not assume native and JavaScript behavior is identical. Read [Compiler target
 
 ## Treat external effects as failure-prone
 
-Several standard-library functions use simple sentinel values rather than structured errors. For example, `fs.read_text` returns an empty string when a read fails, `fs.file_size` returns `-1` when size lookup fails, and HTTP helpers return an empty string for failed requests and non-success status codes. Check what each function guarantees before deciding whether a result is valid.
+Several standard-library functions use simple sentinel values rather than structured errors. For example, `fs.read_text` returns an empty string when a read fails and `fs.file_size` returns `-1` when size lookup fails. The body-only HTTP helpers return an empty string for failed requests and non-success status codes; use `http.response` or `http.post_json_response` when you need status and error information from the same request. Check what each function guarantees before deciding whether a result is valid.
 
 For configuration files:
 
@@ -96,7 +96,7 @@ These are application-security practices, not language-enforced guarantees. Revi
 
 ## Be clear about the server boundary
 
-The current `std.http` API is an HTTP **client** with `get` and JSON `post_json` helpers. It does not expose a listener/server API, routing framework, structured status-code/header access, or an asynchronous request model. A native executable can be useful for backend utilities and client-side integrations, but do not interpret the HTTP client as a complete web-server framework.
+The current `std.http` API is an HTTP **client** with `get`, JSON `post_json`, and structured response helpers. It does not expose a listener/server API, routing framework, response headers, or an asynchronous request model. A native executable can be useful for backend utilities and client-side integrations, but do not interpret the HTTP client as a complete web-server framework.
 
 For JavaScript output, HTTP helpers invoke the external `curl` executable synchronously, so `curl` must be available on `PATH`. Native HTTP uses platform-specific implementations and may have additional build dependencies; see the HTTP section of the [standard-library reference](/reference/standard-library#std-http-http-requests).
 

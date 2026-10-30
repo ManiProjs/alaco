@@ -35,9 +35,12 @@ The backend currently handles common IR constructs such as functions, structs, c
 - Some native standard-library functions may have no JavaScript implementation yet.
 - TOML support is a small scalar-oriented subset, not a complete TOML 1.0 implementation.
 - `std.http` uses the external `curl` executable for JavaScript output. Install `curl` and ensure it is on `PATH` if a transpiled program makes HTTP requests.
+- `std.http.response` and `std.http.post_json_response` return structured JSON response information; the body-only helpers remain ambiguous when the body is empty. See the [HTTP reference](/reference/standard-library#std-http-http-requests).
 - Successful transpilation is not a guarantee that every target runtime behavior matches native C++.
 
 Keep a small executable test for each feature you depend on, and run the generated JavaScript file under the Node.js version you intend to support.
+
+For the feature-by-feature matrix and native build dependencies, see [Target compatibility](/reference/compatibility).
 
 ## Choosing a target
 

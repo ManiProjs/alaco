@@ -2,6 +2,8 @@
 
 Alaco can reject a program during parsing, semantic analysis, native C++ compilation, or execution. Identify which stage failed before changing code: each stage points to a different kind of problem.
 
+For symptom-first fixes—including installation, native toolchain, package resolution, stale builds, JavaScript output, and editor mismatches—see [Troubleshooting](/guide/troubleshooting).
+
 ## Start with `check`
 
 Run the checker on the smallest source file that reproduces the issue:
@@ -19,13 +21,15 @@ The check command validates Alaco syntax, names, and types. It does not prove th
 | Unexpected token or malformed block | Parsing | Check braces, delimiters, statement endings, and supported syntax. |
 | Unknown function, type, module, or field | Semantic analysis | Check spelling, imports, aliases, and the declaration's scope. |
 | Argument or assignment type mismatch | Semantic analysis | Compare the expected type with the value's actual type; don't assume implicit conversions. |
-| C++ compiler missing or native build fails | Toolchain/code generation | Run `alaco doctor` and verify that a supported C++ compiler is installed. |
+| C++ compiler missing or native build fails | Toolchain/code generation | Run `alaco doctor` for compiler prerequisites and `alacoup doctor` for the manager's installation view. |
 | Program compiles but fails when run | Runtime | Reduce the input and inspect file paths, environment, timers, shell commands, and other external effects. |
 | JavaScript output behaves differently | JavaScript target | Run the generated `.js` file with Node.js and check the [target guide](/guide/targets) for incomplete support. |
 
 ## Read source locations
 
 Semantic diagnostics use `alaco::analysis::*` diagnostic codes. When source location information is available, the compiler labels the relevant expression or declaration. A whole-program problem, such as a missing entry point, may not have a specific source range to highlight.
+
+The [Diagnostic reference](/reference/diagnostics) documents observed identifiers and explains how to read the source excerpt and help text.
 
 When a diagnostic seems unrelated to the highlighted line, reduce the file until the issue remains. Then check nearby declarations and imports; a typo or invalid type can cause later expressions to fail analysis too.
 
@@ -41,9 +45,10 @@ If source checking succeeds but `build` or `run` fails, verify the C++ compiler 
 
 ```sh
 alaco doctor
+alacoup doctor
 alaco build src/main.aco
 ```
 
-Keep the first error from the native compiler; later messages may be follow-on errors. If you report a bug, include a minimal `.aco` example, the command you ran, the first useful diagnostic, your operating system, and the output of `alaco --help` or `alaco doctor` when relevant. Remove credentials and other private information from logs before sharing them.
+Keep the first error from the native compiler; later messages may be follow-on errors. If you report a bug, include a minimal `.aco` example, the command you ran, the first useful diagnostic, your operating system, and the output of `alaco --help`, `alaco doctor`, or `alacoup doctor` when relevant. Remove credentials and other private information from logs before sharing them.
 
 See [current limitations](/reference/limitations) for behavior that is not implemented yet.

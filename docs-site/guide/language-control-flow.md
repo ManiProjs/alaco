@@ -51,13 +51,25 @@ This is equivalent to `add(double(4), 3)`. Pipe inputs are checked against the t
 
 ## Loops and match
 
-Use `loop (repeat count)` to execute a block a fixed number of times:
+Alaco supports two loop conditions. Use `loop (repeat count)` to execute a block a fixed number of times:
 
 ```aco
 loop (repeat 3) {
     println("Again");
 }
 ```
+
+Use `loop (while condition)` to repeat while a boolean condition remains true:
+
+```aco
+let mut attempt = 0;
+loop (while attempt < 3) {
+    attempt += 1;
+}
+println(attempt); // 3
+```
+
+The condition is checked before each iteration. Make sure the loop body can eventually make the condition false; Alaco does not currently document a `break` statement as part of this loop form.
 
 `match` selects a branch by matching a value against patterns. `_` is the fallback pattern:
 
@@ -69,7 +81,7 @@ match answer {
 }
 ```
 
-The currently documented loop form is a fixed-count repeat loop. `match` supports literal patterns and `_` as a catch-all. Do not assume `while`, `for`, `break`, or advanced pattern matching are available unless the compiler's current grammar explicitly supports them.
+`match` supports literal patterns and `_` as a catch-all. The loop forms are `repeat` and condition-based `while` inside `loop (...)`; do not assume C-style `for`, standalone `while`, `break`, or advanced pattern matching are available.
 
 ## Structs
 

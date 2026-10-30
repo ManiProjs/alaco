@@ -22,6 +22,7 @@ export default defineConfig({
     nav: [
       { text: 'Guide', link: '/guide/getting-started' },
       { text: 'Language', link: '/guide/language' },
+      { text: 'Cookbook', link: '/cookbook/' },
       { text: 'Reference', link: '/reference/cli' },
       { text: 'GitHub ↗', link: 'https://github.com/ManiProjs/alaco' },
     ],
@@ -34,7 +35,9 @@ export default defineConfig({
           { text: 'Dependencies & packages', link: '/guide/dependencies' },
           { text: 'Incremental builds', link: '/guide/build-cache' },
           { text: 'Testing programs', link: '/guide/testing' },
+          { text: 'Troubleshooting by symptom', link: '/guide/troubleshooting' },
           { text: 'Diagnostics & troubleshooting', link: '/guide/diagnostics' },
+          { text: 'Cookbook', link: '/cookbook/' },
         ] },
         { text: 'Learn Alaco', items: [
           { text: 'Language guide', link: '/guide/language' },
@@ -51,14 +54,24 @@ export default defineConfig({
       ],
       '/reference/': [
         { text: 'Reference', items: [
+          { text: 'Language syntax', link: '/reference/language' },
           { text: 'CLI commands', link: '/reference/cli' },
           { text: 'Release downloads', link: '/reference/releases' },
           { text: 'Standard library', link: '/reference/standard-library' },
+          { text: 'Standard-library signatures', link: '/reference/standard-library-signatures' },
+          { text: 'Diagnostic codes', link: '/reference/diagnostics' },
+          { text: 'Target compatibility', link: '/reference/compatibility' },
           { text: 'Project manifest', link: '/reference/manifest' },
           { text: 'Lockfile', link: '/reference/lockfile' },
           { text: 'Compiler architecture', link: '/reference/architecture' },
           { text: 'Current limitations', link: '/reference/limitations' },
         ] },
+      ],
+      '/contributing': [
+        { text: 'Contributing', items: [ { text: 'Documentation guidelines', link: '/contributing' } ] },
+      ],
+      '/cookbook/': [
+        { text: 'Cookbook', items: [ { text: 'Practical recipes', link: '/cookbook/' } ] },
       ],
       '/tutorial/': [
         { text: 'Tutorials', items: [ { text: 'Build a small CLI', link: '/tutorial/first-cli' } ] },

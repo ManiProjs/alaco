@@ -2,6 +2,8 @@
 
 Alaco's standard library is written in Alaco and backed by small native runtime helpers where operating-system access is needed. `std.io` is available by default. Import other modules explicitly, for example `import std.math;`, then call their functions through the module name (`math.abs(-4)`).
 
+For the exact declarations and parameter/return types from the bundled standard-library sources, see [Standard-library signatures](/reference/standard-library-signatures). This page focuses on behavior and caveats.
+
 ## Conventions and error handling
 
 - Standard modules are imported with `import std.<module>;` and normally accessed through the final module name, such as `fs.exists(path)`.
@@ -65,7 +67,7 @@ Import with `import std.string;`.
 | `join4(first, separator, second, third, fourth)` | Join four strings with a shared separator. |
 | `prefix_suffix(value, prefix, suffix)` | Add different strings before and after a value. |
 
-## `std.geometry` — integer geometry
+## `std.geometry` — geometry helpers
 
 Import with `import std.geometry;`.
 
@@ -76,6 +78,11 @@ Import with `import std.geometry;`.
 | `squared_distance(x1, y1, x2, y2)` | Return squared Euclidean distance (no square root). |
 | `manhattan_distance(x1, y1, x2, y2)` | Return Manhattan distance. |
 | `is_inside_rectangle(x, y, left, top, right, bottom)` | Check whether a point is within the inclusive rectangle bounds. |
+| `absolute(value)` | Return the non-negative magnitude of an integer. |
+| `rectangle_diagonal_squared(width, height)` | Return the squared diagonal length without calculating a square root. |
+| `triangle_area(base, height)` | Calculate `(base * height) / 2` using integer arithmetic. |
+| `circle_area(radius)` | Calculate π × radius² using `Float`. |
+| `circle_circumference(radius)` | Calculate 2 × π × radius using `Float`. |
 
 ## `std.stats` — small integer statistics
 
@@ -96,7 +103,7 @@ Import with `import std.stats;`.
 
 ## `std.units` — unit conversions
 
-Import with `import std.units;`. All functions accept and return `Float`.
+Import with `import std.units;`. Most conversions accept and return `Float`. `bytes_to_kibibytes` and `kibibytes_to_bytes` use `Int` and therefore discard fractional KiB through integer division.
 
 | Function | Conversion |
 | --- | --- |
@@ -175,7 +182,7 @@ Import with `import std.args;`. Argument indices are zero-based and exclude the 
 | `has_option(name: String)` | Check whether an option appears as `--name` or `--name=value`. |
 | `option(name: String, fallback: String)` | Read an option value in either `--name value` or `--name=value` form, or return the fallback. |
 
-The parser is intentionally lightweight: it does not validate a command-line schema or generate help text. Register value-taking options with `option` before relying on positional argument extraction, so their values are not mistaken for positional arguments.
+The parser is intentionally lightweight: it does not validate a command-line schema or generate help text. Calling `option` registers that value-taking option with the positional-argument helper. Call it before relying on `positional_count()` or `positional(index)`, so its value is not mistaken for a positional argument.
 
 ## `std.path` — lexical path helpers
 
@@ -202,6 +209,7 @@ Import with `import std.json;`.
 | `escape(text: String)` | Escape string contents for use inside a JSON string; it does not add surrounding quotes. |
 | `quote(text: String)` | Escape a string and add JSON double quotes. |
 | `has_key(text: String, key: String)` | Check for a key in a top-level JSON object. |
+| `is_null(text: String, key: String)` | Return true only when the top-level key exists and its value is JSON `null`. |
 | `get_string(text: String, key: String, fallback: String)` | Read a top-level string property or return the fallback. |
 | `get_int(text: String, key: String, fallback: Int)` | Read a top-level integer property or return the fallback. |
 | `get_bool(text: String, key: String, fallback: Bool)` | Read a top-level boolean property or return the fallback. |
@@ -235,10 +243,17 @@ Import with `import std.http;`.
 | `is_url(url: String)` | Check whether a URL starts with `http://` or `https://`. |
 | `get(url: String)` | Return the response body for a successful GET request. |
 | `post_json(url: String, body: String)` | POST a body with `Content-Type: application/json` and return the response body. |
+| `response(url: String)` | Perform a GET and return a JSON object containing `status`, `body`, `success`, and `error`. |
+| `post_json_response(url: String, body: String)` | Perform a JSON POST and return the same structured response fields. |
+| `status(url: String)` | Perform a GET and return its HTTP status; `0` means no HTTP response was obtained. |
+| `is_success(url: String)` | Perform a GET and return whether its status is in the 2xx range. |
+| `error(url: String)` | Perform a GET and return its transport/request error text. |
 
-For native builds, no `curl` executable is spawned: Windows uses WinHTTP, macOS uses CFNetwork, and other Unix-like builds use OpenSSL 1.1.0+ for TLS with native sockets for transport. The OpenSSL development headers and libraries must be installed when compiling an HTTP-using program on those Unix-like systems. HTTPS certificate and hostname verification are enabled. For JavaScript output, the synchronous HTTP helpers invoke the external `curl` executable because Node.js networking APIs are asynchronous. Ensure `curl` is installed and on `PATH` when running transpiled programs that use HTTP. Failed requests and non-2xx responses return an empty string, so an empty response cannot be distinguished from a failure. The API does not expose status codes or response headers.
+For native builds, no `curl` executable is spawned: Windows uses WinHTTP, macOS uses CFNetwork, and other Unix-like builds use OpenSSL 1.1.0+ for TLS with native sockets for transport. The OpenSSL development headers and libraries must be installed when compiling an HTTP-using program on those Unix-like systems. HTTPS certificate and hostname verification are enabled. For JavaScript output, the synchronous HTTP helpers invoke the external `curl` executable because Node.js networking APIs are asynchronous. Ensure `curl` is installed and on `PATH` when running transpiled programs that use HTTP.
 
-Use `is_url` only as a lightweight scheme check, not as complete URL validation. Do not send secrets to untrusted endpoints. Since the API does not expose status codes or headers and uses an empty string for failure, it is best suited to simple requests where that limitation is acceptable.
+The body-only `get` and `post_json` helpers return an empty string for transport failures and non-2xx responses, so an empty body is ambiguous. The structured `response` and `post_json_response` variants include status, body, success, and error fields in JSON. `status`, `is_success`, and `error` each issue their own GET request; do not call all three when one `response` call would provide the information from a single request. The API does not expose response headers.
+
+Use `is_url` only as a lightweight scheme check, not as complete URL validation. Do not send secrets to untrusted endpoints. Prefer the structured response helpers when the caller needs to distinguish a successful empty response from a failed request or inspect the HTTP status.
 
 Runnable examples: `examples/http_demo.aco`, `examples/json_demo.aco`, `examples/toml_demo.aco`, and `examples/type_safety.aco`.
 
@@ -255,7 +270,7 @@ Runnable examples: `examples/http_demo.aco`, `examples/json_demo.aco`, `examples
 | Manipulate path strings | `std.path` | Host platform path semantics apply |
 | Validate/read simple JSON | `std.json` | Typed accessors read top-level keys only |
 | Read simple TOML settings | `std.toml` | Supports a limited subset, not full TOML 1.0 |
-| Basic HTTP GET / JSON POST | `std.http` | No status/header API; failures may look like empty bodies |
+| HTTP GET / JSON POST | `std.http` | Structured responses include status and error but not response headers |
 | Timestamp and sleep | `std.timing` | Whole-second timestamp and millisecond sleep |
 
 ## `std.timing` — basic time utilities

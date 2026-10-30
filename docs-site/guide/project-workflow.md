@@ -1,16 +1,17 @@
 # Alaco project workflow
 
-This page describes a practical edit-check-run cycle for the current Alaco toolchain. For language syntax, see the [language guide](/guide/language); for standard-library APIs, see the [standard-library reference](/reference/standard-library).
+This page describes a practical edit-check-run cycle with the Alaco compiler. Install and manage compiler versions with [AlacoUp](/reference/releases), then use `alaco` for language and project commands. For language syntax, see the [language guide](/guide/language); for standard-library APIs, see the [standard-library reference](/reference/standard-library).
 
 ## 1. Check the toolchain
 
-Build the compiler from the repository:
+Check the installed toolchain and its native build prerequisites:
 
 ```sh
-cargo build
+alacoup doctor
+alaco doctor
 ```
 
-Alaco generates C++ and invokes a system C++ compiler to produce native executables. If a build fails before Alaco reports a source-language error, check that a supported C++ toolchain is installed. `alaco doctor` checks the compiler and standard-library setup when using an installed CLI.
+AlacoUp manages prebuilt compiler releases; it is not the compiler itself. Use `alaco` for Alaco language commands. You do not need Rust or a source checkout to use a published release. Alaco generates C++ and invokes a system C++ compiler to produce native executables. If a build fails before Alaco reports a source-language error, check that a supported C++ toolchain is installed. `alaco doctor` checks compiler build prerequisites; `alacoup doctor` checks the manager installation, active compiler, standard-library location, PATH, common native tools, and manager update status.
 
 ## 2. Create a project
 
@@ -53,7 +54,7 @@ alaco build src/main.aco
 
 Native builds compile generated C++ with the system toolchain. `alaco build` does not currently expose `--explain` or `--no-cache` options; if you need to force a clean build, use `alaco clean` before building again. See [Build artifacts and troubleshooting](/guide/build-cache).
 
-Within a project, commands that accept an optional source path use the configured entry point where applicable. Run `alaco --help` for the installed version's full option list.
+Within a project, commands that accept an optional source path use the configured entry point where applicable. Run `alaco --help` for the compiler's full option list. Use `alacoup --help` for compiler installation and version-management commands.
 
 ## 4. Organize local modules
 
@@ -92,8 +93,8 @@ The [`examples/`](https://github.com/ManiProjs/alaco/tree/main/examples) catalog
 - `shell.aco` executes a host command.
 - `a_file_with_error.aco` is intentionally invalid and should fail checking.
 
-Read an example before running it, especially when it accesses the filesystem, environment, network, or shell. Use `cargo test` to run the compiler's Rust test suite.
+Read an example before running it, especially when it accesses the filesystem, environment, network, or shell. Use `cargo test` only when developing Alaco itself from its source repository; ordinary language users do not need Rust or Cargo.
 
 ## Current implementation boundaries
 
-Alaco is evolving. The standard library's JSON helpers expose a limited set of top-level typed lookups; TOML support covers a subset rather than the full TOML 1.0 grammar; HTTP calls do not expose status codes or headers; and interpolation currently accepts variable names rather than arbitrary expressions. These limitations are documented in the language and standard-library references.
+Alaco is evolving. The standard library's JSON helpers expose a limited set of top-level typed lookups; TOML support covers a subset rather than the full TOML 1.0 grammar; HTTP exposes status and error information through structured response helpers but does not expose response headers; and interpolation currently accepts variable names rather than arbitrary expressions. These limitations are documented in the language and standard-library references.

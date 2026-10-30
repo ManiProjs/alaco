@@ -51,8 +51,8 @@ alaco build --output ./tally
 ./tally
 ```
 
-The build requires a supported C++ compiler. On systems where the executable path or invocation differs, consult `alaco build --help` and `alaco doctor`.
+The build requires a supported C++ compiler. On systems where the executable path or invocation differs, consult `alaco build --help` and run `alacoup doctor` to inspect the installed toolchain.
 
 ## 4. Explore next
 
-Try adding a struct, a `match` statement, or a fixed-count repeat loop. The [language guide](/guide/language) describes supported constructs and the [CLI reference](/reference/cli) covers compiler commands.
+Try adding a struct, a `match` statement, or a repeat/condition-based loop. The [language guide](/guide/language) describes supported constructs and the [CLI reference](/reference/cli) covers compiler commands.

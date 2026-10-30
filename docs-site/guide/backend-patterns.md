@@ -89,28 +89,28 @@ These accessors only read top-level typed fields. They do not provide a dynamic 
 
 ## Use HTTP with explicit failure expectations
 
-The HTTP API currently returns response bodies, not a structured response with status codes and headers.
+For a quick body-only request, `http.get` returns the body on success and an empty string for transport failures and non-2xx responses. When the status matters, use `http.response` to make one request and receive a JSON object with `status`, `body`, `success`, and `error` fields.
 
 ```aco
 import std.http;
+import std.json;
 
 fn main() {
-    let url = "https://example.com/health";
-
-    if http.is_url(url) {
-        let body = http.get(url);
-        if body == "" {
-            eprintln("Request failed, returned a non-success status, or produced an empty body");
+    let result = http.response("https://example.com/health");
+    if json.is_valid(result) {
+        let status = json.get_int(result, "status", 0);
+        let success = json.get_bool(result, "success", false);
+        let error = json.get_string(result, "error", "");
+        if success {
+            println("HTTP status: ${status}");
         } else {
-            println(body);
+            eprintln("Request failed (${status}): " + error);
         }
-    } else {
-        eprintln("Expected an HTTP or HTTPS URL");
     }
 }
 ```
 
-`is_url` only checks the URL scheme prefix; it is not full URL validation. An empty response is ambiguous: it can indicate failure or a successful response with an empty body. Do not use this API when you must distinguish status codes or inspect response headers.
+`is_url` only checks the URL scheme prefix; it is not full URL validation. The structured response does not expose response headers. The convenience functions `status`, `is_success`, and `error` each perform their own GET request, so prefer `response` when you need several pieces of information about one request.
 
 Native HTTP uses platform-specific implementations. Transpiled JavaScript uses the external `curl` executable for synchronous HTTP calls, so install `curl` and ensure it is on `PATH` when using `std.http` from generated JavaScript. Do not send credentials to endpoints you do not trust.
 
@@ -148,4 +148,4 @@ Relative paths are based on the process's current working directory, not automat
 - Keep network calls and filesystem writes out of code paths that should be deterministic and side-effect-free.
 - Run `alaco check` first, then exercise the actual runtime path with `alaco run` or a focused test.
 
-See the [standard-library reference](/reference/standard-library) for signatures and per-module limitations, and [Compiler targets](/guide/targets) for differences between native and JavaScript execution.
+See the [standard-library reference](/reference/standard-library) for signatures and per-module limitations, and [Target compatibility](/reference/compatibility) for differences between native and JavaScript execution.
