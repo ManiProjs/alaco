@@ -7,12 +7,15 @@ use crate::{
     language::BinaryOp,
     stdlib::LoadedModule,
 };
+use std::collections::HashSet;
 
 /// Emits runnable JavaScript (Node.js-compatible) from Alaco's typed IR.
 pub struct JavaScriptCodegen {
     output: String,
     indent: usize,
     module_aliases: Vec<String>,
+    module_function_names: HashSet<String>,
+    current_module_alias: Option<String>,
 }
 
 impl JavaScriptCodegen {
@@ -21,6 +24,8 @@ impl JavaScriptCodegen {
             output: String::new(),
             indent: 0,
             module_aliases: Vec::new(),
+            module_function_names: HashSet::new(),
+            current_module_alias: None,
         }
     }
 
@@ -57,7 +62,6 @@ function __builtin_env_current_dir() { try { return process.cwd(); } catch { ret
 function __builtin_args_register_option(name) { __alaco_value_options.add(name); }
 function __builtin_args_count() { return __alaco_args.length; }
 function __builtin_args_get(index) { return Number.isInteger(index) && index >= 0 ? (__alaco_args[index] ?? '') : ''; }
-function __builtin_args_has_flag(name) { return __alaco_args.includes(name); }
 function __builtin_args_has_option(name) { return __alaco_args.some(a => a === name || a.startsWith(name + '=')); }
 function __builtin_args_option(name, fallback) { for (let i = 0; i < __alaco_args.length; i++) { const a = __alaco_args[i]; if (a.startsWith(name + '=')) return a.slice(name.length + 1); if (a === name) return i + 1 < __alaco_args.length && !__alaco_args[i + 1].startsWith('-') ? __alaco_args[i + 1] : fallback; } return fallback; }
 function __alaco_positional() { const out = []; let options = true; for (let i = 0; i < __alaco_args.length; i++) { const a = __alaco_args[i]; if (options && a === '--') { options = false; continue; } if (options && a.length > 1 && a[0] === '-') { if (__alaco_value_options.has(a) && !a.includes('=') && i + 1 < __alaco_args.length) i++; continue; } out.push(a); } return out; }
@@ -86,13 +90,8 @@ function __builtin_toml_get_int(text, key, fallback) { const v = __alaco_toml(te
 function __builtin_toml_get_bool(text, key, fallback) { const v = __alaco_toml(text)?.[key]; return typeof v === 'boolean' ? v : fallback; }
 function __builtin_http_is_url(url) { try { const u = new URL(url); return (u.protocol === 'http:' || u.protocol === 'https:') && !!u.hostname && !u.username && !u.password; } catch { return false; } }
 function __alaco_http_request(url, body) { if (!__builtin_http_is_url(url)) return {status: 0, body: '', success: false, error: 'invalid URL'}; try { const args = ['-sSL', '--max-time', '15', '-w', '\n%{http_code}']; if (body !== null) args.push('-X', 'POST', '-H', 'Content-Type: application/json', '--data-binary', body); args.push(url); const result = __alaco_child_process.spawnSync('curl', args, {encoding:'utf8', maxBuffer:16*1024*1024}); if (result.error) return {status: 0, body: '', success: false, error: result.error.message}; if (result.status !== 0) return {status: 0, body: '', success: false, error: (result.stderr || 'HTTP transport failed').trim()}; const marker = result.stdout.lastIndexOf('\n'); const status = Number(result.stdout.slice(marker + 1)); const responseBody = marker < 0 ? result.stdout : result.stdout.slice(0, marker); const success = status >= 200 && status < 300; return {status, body: responseBody, success, error: success ? '' : `HTTP status ${status}`}; } catch (e) { return {status: 0, body: '', success: false, error: String(e)}; } }
-function __builtin_http_get(url) { const r = __alaco_http_request(url, null); return r.success ? r.body : ''; }
-function __builtin_http_post(url, body) { const r = __alaco_http_request(url, body); return r.success ? r.body : ''; }
 function __builtin_http_response(url) { return JSON.stringify(__alaco_http_request(url, null)); }
 function __builtin_http_post_response(url, body) { return JSON.stringify(__alaco_http_request(url, body)); }
-function __builtin_http_status(url) { return __alaco_http_request(url, null).status; }
-function __builtin_http_success(url) { return __alaco_http_request(url, null).success; }
-function __builtin_http_error(url) { return __alaco_http_request(url, null).error; }
 function __builtin_time_unix_seconds() { return Math.floor(Date.now() / 1000); }
 function __builtin_time_sleep_ms(ms) { if (ms > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
 "#);
@@ -148,6 +147,14 @@ function __builtin_time_sleep_ms(ms) { if (ms > 0) Atomics.wait(new Int32Array(n
             }
             self.line(&format!("const {} = {{", module.alias));
             self.indent += 1;
+            let function_names = module_ir
+                .items
+                .iter()
+                .filter_map(|item| match item {
+                    IrItem::Function(name) => Some(name.clone()),
+                    _ => None,
+                })
+                .collect::<HashSet<_>>();
             for item in &module_ir.items {
                 if let IrItem::Function(name) = item
                     && let Some(function) = module_ir.function(name)
@@ -155,7 +162,7 @@ function __builtin_time_sleep_ms(ms) { if (ms > 0) Atomics.wait(new Int32Array(n
                     self.line(&format!(
                         "{}: {},",
                         name,
-                        self.function_expression(function)
+                        self.function_expression(function, &module.alias, &function_names)
                     ));
                 }
             }
@@ -172,7 +179,12 @@ function __builtin_time_sleep_ms(ms) { if (ms > 0) Atomics.wait(new Int32Array(n
         self.output
     }
 
-    fn function_expression(&self, f: &IrFunction) -> String {
+    fn function_expression(
+        &self,
+        f: &IrFunction,
+        module_alias: &str,
+        module_function_names: &HashSet<String>,
+    ) -> String {
         let params = f
             .parameters
             .iter()
@@ -184,6 +196,8 @@ function __builtin_time_sleep_ms(ms) { if (ms > 0) Atomics.wait(new Int32Array(n
             output: String::new(),
             indent: 0,
             module_aliases: self.module_aliases.clone(),
+            module_function_names: module_function_names.clone(),
+            current_module_alias: Some(module_alias.to_owned()),
         };
         nested.line(&format!("({}) => {{", params));
         nested.indent += 1;
@@ -488,6 +502,11 @@ function __builtin_time_sleep_ms(ms) { if (ms > 0) Atomics.wait(new Int32Array(n
 
     fn callee(&self, c: &IrCallee) -> String {
         match c {
+            IrCallee::Identifier(n) if self.module_function_names.contains(n) => format!(
+                "{}.{}",
+                self.current_module_alias.as_deref().unwrap_or_default(),
+                n
+            ),
             IrCallee::Identifier(n) => n.clone(),
             IrCallee::Member { object, member } => format!("{}.{}", self.callee(object), member),
             IrCallee::Value(e) => self.expr(e),

@@ -1,3 +1,5 @@
+import std.json;
+
 // Synchronous HTTP helpers. Native builds use WinHTTP on Windows, CFNetwork
 // on macOS, and sockets/OpenSSL on other Unix-like systems. JavaScript builds
 // invoke curl, which must be installed and available on PATH.
@@ -6,14 +8,6 @@
 // success, and error from one request. JSON POST sends application/json.
 fn is_url(url: String) -> Bool {
     return __builtin_http_is_url(url);
-}
-
-fn get(url: String) -> String {
-    return __builtin_http_get(url);
-}
-
-fn post_json(url: String, body: String) -> String {
-    return __builtin_http_post(url, body);
 }
 
 // Return JSON containing status, body, success, and error from one request.
@@ -25,16 +19,32 @@ fn post_json_response(url: String, body: String) -> String {
     return __builtin_http_post_response(url, body);
 }
 
+fn get(url: String) -> String {
+    let result = response(url);
+    if json.get_bool(result, "success", false) {
+        return json.get_string(result, "body", "");
+    }
+    return "";
+}
+
+fn post_json(url: String, body: String) -> String {
+    let result = post_json_response(url, body);
+    if json.get_bool(result, "success", false) {
+        return json.get_string(result, "body", "");
+    }
+    return "";
+}
+
 // These helpers issue their own GET request. A status of 0 means that the
 // request could not obtain an HTTP response; 2xx statuses indicate success.
 fn status(url: String) -> Int {
-    return __builtin_http_status(url);
+    return json.get_int(response(url), "status", 0);
 }
 
 fn is_success(url: String) -> Bool {
-    return __builtin_http_success(url);
+    return json.get_bool(response(url), "success", false);
 }
 
 fn error(url: String) -> String {
-    return __builtin_http_error(url);
+    return json.get_string(response(url), "error", "");
 }

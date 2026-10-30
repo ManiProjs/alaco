@@ -492,12 +492,7 @@ impl CppCodegen {
                         | "__builtin_toml_get_bool" => requirements.toml = true,
                         "__builtin_http_response"
                         | "__builtin_http_post_response"
-                        | "__builtin_http_get"
-                        | "__builtin_http_post"
-                        | "__builtin_http_is_url"
-                        | "__builtin_http_status"
-                        | "__builtin_http_success"
-                        | "__builtin_http_error" => requirements.http = true,
+                        | "__builtin_http_is_url" => requirements.http = true,
                         "__builtin_time_unix_seconds" | "__builtin_time_sleep_ms" => {
                             requirements.time = true
                         }
@@ -838,7 +833,6 @@ impl CppCodegen {
         self.push_line("static bool __alaco_is_value_option(const std::string& arg) { for (const auto& name : __alaco_value_options) if (arg == name || (arg.size() > name.size() && arg.compare(0, name.size(), name) == 0 && arg[name.size()] == '=')) return true; return false; }");
         self.push_line("static long long __builtin_args_count() { return static_cast<long long>(__alaco_args.size()); }");
         self.push_line("static std::string __builtin_args_get(long long index) { return index >= 0 && static_cast<std::size_t>(index) < __alaco_args.size() ? __alaco_args[static_cast<std::size_t>(index)] : std::string{}; }");
-        self.push_line("static bool __builtin_args_has_flag(const std::string& name) { return std::find(__alaco_args.begin(), __alaco_args.end(), name) != __alaco_args.end(); }");
         self.push_line("static bool __builtin_args_has_option(const std::string& name) { for (std::size_t i = 0; i < __alaco_args.size(); ++i) { const auto& arg = __alaco_args[i]; if (arg == name || (arg.size() > name.size() && arg.compare(0, name.size(), name) == 0 && arg[name.size()] == '=')) return true; } return false; }");
         self.push_line("static std::string __builtin_args_option(const std::string& name, const std::string& fallback) { for (std::size_t i = 0; i < __alaco_args.size(); ++i) { const auto& arg = __alaco_args[i]; if (arg.size() > name.size() && arg.compare(0, name.size(), name) == 0 && arg[name.size()] == '=') return arg.substr(name.size() + 1); if (arg == name) return i + 1 < __alaco_args.size() && (__alaco_args[i + 1].empty() || __alaco_args[i + 1][0] != '-') ? __alaco_args[i + 1] : fallback; } return fallback; }");
         self.push_line("static long long __builtin_args_positional_count() { long long count = 0; bool options = true; for (std::size_t i = 0; i < __alaco_args.size(); ++i) { const auto& arg = __alaco_args[i]; if (options && arg == \"--\") { options = false; continue; } if (options && arg.size() > 1 && arg[0] == '-') { if (__alaco_is_value_option(arg) && arg.find('=') == std::string::npos && i + 1 < __alaco_args.size()) ++i; continue; } ++count; } return count; }");
@@ -1184,14 +1178,9 @@ static std::string __alaco_http_request(const std::string& url, const std::strin
     return {};
 #endif
 }
-static std::string __builtin_http_get(const std::string& url) { auto body = __alaco_http_request(url, nullptr); return __alaco_http_last_status >= 200 && __alaco_http_last_status < 300 && __alaco_http_last_error.empty() ? body : std::string{}; }
-static std::string __builtin_http_post(const std::string& url, const std::string& body) { auto result = __alaco_http_request(url, &body); return __alaco_http_last_status >= 200 && __alaco_http_last_status < 300 && __alaco_http_last_error.empty() ? result : std::string{}; }
 static std::string __alaco_http_response(const std::string& url, const std::string* body) { std::string response_body = __alaco_http_request(url, body); bool success = __alaco_http_last_status >= 200 && __alaco_http_last_status < 300 && __alaco_http_last_error.empty(); std::string error = __alaco_http_last_error; if (__alaco_http_last_status == 0 && error.empty()) error = "HTTP transport failed"; return "{\"status\":" + std::to_string(__alaco_http_last_status) + ",\"body\":\"" + __alaco_http_json_escape(response_body) + "\",\"success\":" + (success ? "true" : "false") + ",\"error\":\"" + __alaco_http_json_escape(error) + "\"}"; }
 static std::string __builtin_http_response(const std::string& url) { return __alaco_http_response(url, nullptr); }
 static std::string __builtin_http_post_response(const std::string& url, const std::string& body) { return __alaco_http_response(url, &body); }
-static long long __builtin_http_status(const std::string& url) { (void)__alaco_http_request(url, nullptr); return __alaco_http_last_status; }
-static bool __builtin_http_success(const std::string& url) { (void)__alaco_http_request(url, nullptr); return __alaco_http_last_status >= 200 && __alaco_http_last_status < 300 && __alaco_http_last_error.empty(); }
-static std::string __builtin_http_error(const std::string& url) { (void)__alaco_http_request(url, nullptr); return __alaco_http_last_error.empty() && __alaco_http_last_status == 0 ? std::string("HTTP transport failed") : __alaco_http_last_error; }
 
 "#);
     }

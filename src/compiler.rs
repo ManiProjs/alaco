@@ -1869,6 +1869,33 @@ struct Person {
             String::from_utf8_lossy(&output.stdout),
             "5\ntrue\ntrue\nresult.txt\n2\ninput.txt\ntail.txt\n\n"
         );
+
+        let javascript = Compiler::transpile_javascript(source, "args_integration_test.aco")
+            .expect("the args standard library should transpile to JavaScript");
+        let javascript_path =
+            std::env::temp_dir().join(format!("alaco_args_integration_{}.js", std::process::id()));
+        std::fs::write(&javascript_path, javascript).expect("write generated JavaScript");
+        let javascript_output = std::process::Command::new("node")
+            .arg(&javascript_path)
+            .args([
+                "--verbose",
+                "input.txt",
+                "--output",
+                "result.txt",
+                "tail.txt",
+            ])
+            .output()
+            .expect("Node.js should run the generated args test");
+        let _ = std::fs::remove_file(&javascript_path);
+        assert!(
+            javascript_output.status.success(),
+            "JavaScript failed:\n{}",
+            String::from_utf8_lossy(&javascript_output.stderr)
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&javascript_output.stdout),
+            "5\ntrue\ntrue\nresult.txt\n2\ninput.txt\ntail.txt\n\n"
+        );
     }
 
     #[test]
@@ -2307,6 +2334,11 @@ struct Person {
                 println(http.is_url("http://"));
                 println(http.is_url("HTTP://localhost:8080/path#fragment"));
                 println(http.is_url("http://user:password@example.com"));
+                println(http.get("not-a-url"));
+                println(http.post_json("not-a-url", "{}"));
+                println(http.status("not-a-url"));
+                println(http.is_success("not-a-url"));
+                println(http.error("not-a-url"));
                 let response = http.response("not-a-url");
                 println(json.get_int(response, "status", -1));
                 println(json.get_bool(response, "success", true));
@@ -2329,6 +2361,11 @@ struct Person {
             "false\n",
             "true\n",
             "false\n",
+            "\n",
+            "\n",
+            "0\n",
+            "false\n",
+            "invalid URL\n",
             "0\n",
             "false\n",
             "invalid URL\n"
@@ -2355,7 +2392,12 @@ struct Person {
             .output()
             .expect("Node.js should run the generated JavaScript");
         let _ = std::fs::remove_file(&javascript_path);
-        assert!(javascript_output.status.success());
+        assert!(
+            javascript_output.status.success(),
+            "JavaScript failed:\n{}\nstdout:\n{}",
+            String::from_utf8_lossy(&javascript_output.stderr),
+            String::from_utf8_lossy(&javascript_output.stdout)
+        );
         assert_eq!(
             String::from_utf8_lossy(&javascript_output.stdout),
             expected,
