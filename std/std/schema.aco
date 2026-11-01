@@ -1,0 +1,21 @@
+// Versioned JSON envelopes. Migration functions remain ordinary Alaco code:
+// read the stored version/payload, transform it, then write the new version.
+fn wrap(name: String, version: Int, payload: String) -> String {
+    return __builtin_schema_wrap(name, version, payload);
+}
+
+fn name(document: String) -> String {
+    return __builtin_schema_name(document);
+}
+
+fn version(document: String) -> Int {
+    return __builtin_schema_version(document);
+}
+
+fn payload(document: String) -> String {
+    return __builtin_schema_payload(document);
+}
+
+fn matches(document: String, expected_name: String, minimum_version: Int, maximum_version: Int) -> Bool {
+    return __builtin_schema_matches(document, expected_name, minimum_version, maximum_version);
+}

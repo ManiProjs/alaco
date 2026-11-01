@@ -26,6 +26,10 @@ struct RuntimeRequirements {
     http: bool,
     time: bool,
     lifetime: bool,
+    state: bool,
+    events: bool,
+    workflow: bool,
+    schema: bool,
 }
 
 impl RuntimeRequirements {
@@ -45,6 +49,10 @@ impl RuntimeRequirements {
             || self.http
             || self.time
             || self.lifetime
+            || self.state
+            || self.events
+            || self.workflow
+            || self.schema
     }
 }
 
@@ -269,6 +277,13 @@ impl CppCodegen {
                 "std.toml" => requirements.toml = true,
                 "std.http" => requirements.http = true,
                 "std.timing" => requirements.time = true,
+                "std.state" => requirements.state = true,
+                "std.events" => requirements.events = true,
+                "std.workflow" => requirements.workflow = true,
+                "std.schema" => {
+                    requirements.schema = true;
+                    requirements.json = true;
+                }
                 _ => {}
             }
             if let Some(ir) = &module.ir {
@@ -562,6 +577,7 @@ impl CppCodegen {
         self.push_line("#include <optional>");
         self.push_line("#include <set>");
         self.push_line("#include <tuple>");
+        self.push_line("#include <utility>");
         self.push_line("#include <variant>");
         self.push_line("#include <vector>");
 
@@ -643,6 +659,22 @@ impl CppCodegen {
             self.push_line("#include <utility>");
         }
 
+        if requirements.state || requirements.events || requirements.workflow {
+            self.push_line("#include <mutex>");
+            self.push_line("#include <map>");
+            self.push_line("#include <vector>");
+            self.push_line("#include <string>");
+        }
+        if requirements.workflow {
+            self.push_line("#include <fstream>");
+            self.push_line("#include <fcntl.h>");
+            self.push_line("#if defined(_WIN32)");
+            self.push_line("#include <io.h>");
+            self.push_line("#else");
+            self.push_line("#include <unistd.h>");
+            self.push_line("#endif");
+        }
+
         self.push_line("");
     }
 
@@ -710,6 +742,18 @@ impl CppCodegen {
         }
         if requirements.time {
             self.generate_time_runtime();
+        }
+        if requirements.state {
+            self.generate_state_runtime();
+        }
+        if requirements.events {
+            self.generate_events_runtime();
+        }
+        if requirements.workflow {
+            self.generate_workflow_runtime();
+        }
+        if requirements.schema {
+            self.generate_schema_runtime();
         }
 
         self.push_line("// End Alaco runtime");
@@ -1188,6 +1232,182 @@ static std::string __builtin_http_post_response(const std::string& url, const st
     fn generate_time_runtime(&mut self) {
         self.push_line("static long long __builtin_time_unix_seconds() { return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count(); }");
         self.push_line("static void __builtin_time_sleep_ms(long long ms) { if (ms > 0) std::this_thread::sleep_for(std::chrono::milliseconds(ms)); }");
+        self.push_line("");
+    }
+
+    fn generate_state_runtime(&mut self) {
+        self.output.push_str(r#"
+static std::mutex __alaco_state_mutex;
+static std::map<std::string, std::set<std::pair<std::string, std::string>>> __alaco_state_edges;
+static std::map<std::string, std::string> __alaco_state_values;
+static bool __builtin_state_allow(const std::string& machine, const std::string& from, const std::string& to) {
+    if (machine.empty() || from.empty() || to.empty() || from == to) return false;
+    std::lock_guard<std::mutex> lock(__alaco_state_mutex);
+    return __alaco_state_edges[machine].insert({from, to}).second;
+}
+static bool __builtin_state_create(const std::string& machine, const std::string& initial) {
+    if (machine.empty() || initial.empty()) return false;
+    std::lock_guard<std::mutex> lock(__alaco_state_mutex);
+    return __alaco_state_values.emplace(machine, initial).second;
+}
+static std::string __builtin_state_current(const std::string& machine) {
+    std::lock_guard<std::mutex> lock(__alaco_state_mutex);
+    auto it = __alaco_state_values.find(machine);
+    return it == __alaco_state_values.end() ? std::string{} : it->second;
+}
+static bool __builtin_state_transition(const std::string& machine, const std::string& next) {
+    std::lock_guard<std::mutex> lock(__alaco_state_mutex);
+    auto current = __alaco_state_values.find(machine);
+    auto edges = __alaco_state_edges.find(machine);
+    if (current == __alaco_state_values.end() || edges == __alaco_state_edges.end()) return false;
+    if (edges->second.find({current->second, next}) == edges->second.end()) return false;
+    current->second = next;
+    return true;
+}
+static bool __builtin_state_reset(const std::string& machine, const std::string& initial) {
+    if (machine.empty() || initial.empty()) return false;
+    std::lock_guard<std::mutex> lock(__alaco_state_mutex);
+    __alaco_state_values[machine] = initial;
+    return true;
+}
+"#);
+        self.push_line("");
+    }
+
+    fn generate_events_runtime(&mut self) {
+        self.output.push_str(r#"
+static std::mutex __alaco_events_mutex;
+static std::map<std::string, std::vector<std::pair<long long, std::string>>> __alaco_event_streams;
+static std::string __alaco_event_json_escape(const std::string& value) {
+    std::string out;
+    for (unsigned char c : value) {
+        switch (c) {
+            case '"': out += "\\\""; break;
+            case '\\': out += "\\\\"; break;
+            case '\n': out += "\\n"; break;
+            case '\r': out += "\\r"; break;
+            case '\t': out += "\\t"; break;
+            default: if (c < 0x20) { const char* h = "0123456789abcdef"; out += "\\u00"; out += h[c >> 4]; out += h[c & 15]; } else out += static_cast<char>(c);
+        }
+    }
+    return out;
+}
+static long long __builtin_events_publish(const std::string& stream, const std::string& payload) {
+    if (stream.empty()) return -1;
+    std::lock_guard<std::mutex> lock(__alaco_events_mutex);
+    auto& events = __alaco_event_streams[stream];
+    long long id = events.empty() ? 1 : events.back().first + 1;
+    events.push_back({id, payload});
+    return id;
+}
+static std::string __builtin_events_read_after(const std::string& stream, long long cursor) {
+    std::lock_guard<std::mutex> lock(__alaco_events_mutex);
+    auto it = __alaco_event_streams.find(stream);
+    if (it == __alaco_event_streams.end()) return "[]";
+    std::string out = "[";
+    bool first = true;
+    for (const auto& event : it->second) {
+        if (event.first <= cursor) continue;
+        if (!first) out += ",";
+        first = false;
+        out += "{\"id\":" + std::to_string(event.first) + ",\"payload\":\"" + __alaco_event_json_escape(event.second) + "\"}";
+    }
+    return out + "]";
+}
+static long long __builtin_events_latest_id(const std::string& stream) {
+    std::lock_guard<std::mutex> lock(__alaco_events_mutex);
+    auto it = __alaco_event_streams.find(stream);
+    return it == __alaco_event_streams.end() || it->second.empty() ? 0 : it->second.back().first;
+}
+"#);
+        self.push_line("");
+    }
+
+    fn generate_workflow_runtime(&mut self) {
+        self.output.push_str(r#"
+static std::mutex __alaco_workflow_mutex;
+static std::string __alaco_workflow_hex(const std::string& value) {
+    static const char* digits = "0123456789abcdef";
+    std::string out; out.reserve(value.size() * 2);
+    for (unsigned char c : value) { out += digits[c >> 4]; out += digits[c & 15]; }
+    return out;
+}
+static std::string __alaco_workflow_unhex(const std::string& value) {
+    auto digit = [](char c) -> int { if (c >= '0' && c <= '9') return c - '0'; if (c >= 'a' && c <= 'f') return c - 'a' + 10; if (c >= 'A' && c <= 'F') return c - 'A' + 10; return -1; };
+    if (value.size() % 2) return {};
+    std::string out; out.reserve(value.size() / 2);
+    for (std::size_t i = 0; i < value.size(); i += 2) { int a = digit(value[i]), b = digit(value[i + 1]); if (a < 0 || b < 0) return {}; out += static_cast<char>((a << 4) | b); }
+    return out;
+}
+static std::string __alaco_workflow_escape(const std::string& value) {
+    std::string out; for (unsigned char c : value) { switch (c) { case '"': out += "\\\""; break; case '\\': out += "\\\\"; break; case '\n': out += "\\n"; break; case '\r': out += "\\r"; break; case '\t': out += "\\t"; break; default: if (c < 0x20) { const char* h = "0123456789abcdef"; out += "\\u00"; out += h[c >> 4]; out += h[c & 15]; } else out += static_cast<char>(c); } } return out;
+}
+static bool __alaco_workflow_append(const std::string& path, const std::string& id, const std::string& step, const std::string& payload, long long attempt, const std::string& status) {
+    if (path.empty() || id.empty()) return false;
+    std::ofstream file(path, std::ios::out | std::ios::app | std::ios::binary);
+    if (!file) return false;
+    file << __alaco_workflow_hex(id) << '|' << __alaco_workflow_hex(step) << '|' << __alaco_workflow_hex(payload) << '|' << attempt << '|' << status << '\n';
+    file.flush();
+    if (!file.good()) return false;
+    file.close();
+#if defined(_WIN32)
+    int fd = ::_open(path.c_str(), _O_WRONLY | _O_APPEND);
+    if (fd < 0) return false;
+    bool synced = ::_commit(fd) == 0;
+    ::_close(fd);
+#else
+    int fd = ::open(path.c_str(), O_WRONLY | O_APPEND);
+    if (fd < 0) return false;
+    bool synced = ::fsync(fd) == 0;
+    ::close(fd);
+#endif
+    return synced;
+}
+static std::vector<std::string> __alaco_workflow_latest(const std::string& path, const std::string& wanted) {
+    std::ifstream file(path, std::ios::binary);
+    std::string line; std::vector<std::string> latest;
+    const std::string encoded = __alaco_workflow_hex(wanted);
+    while (std::getline(file, line)) {
+        std::vector<std::string> fields; std::size_t start = 0;
+        for (int i = 0; i < 4; ++i) { auto pos = line.find('|', start); if (pos == std::string::npos) { fields.clear(); break; } fields.push_back(line.substr(start, pos - start)); start = pos + 1; }
+        if (fields.empty()) continue;
+        fields.push_back(line.substr(start));
+        if (fields[0] == encoded) latest = std::move(fields);
+    }
+    return latest;
+}
+static bool __builtin_workflow_checkpoint(const std::string& path, const std::string& id, const std::string& step, const std::string& payload, long long attempt) {
+    if (attempt < 0) return false;
+    std::lock_guard<std::mutex> lock(__alaco_workflow_mutex);
+    return __alaco_workflow_append(path, id, step, payload, attempt, "A");
+}
+static std::string __builtin_workflow_resume(const std::string& path, const std::string& id) {
+    std::lock_guard<std::mutex> lock(__alaco_workflow_mutex);
+    auto fields = __alaco_workflow_latest(path, id);
+    if (fields.size() != 5 || fields[4] != "A") return {};
+    auto step = __alaco_workflow_unhex(fields[1]); auto payload = __alaco_workflow_unhex(fields[2]);
+    return "{\"id\":\"" + __alaco_workflow_escape(id) + "\",\"step\":\"" + __alaco_workflow_escape(step) + "\",\"payload\":\"" + __alaco_workflow_escape(payload) + "\",\"attempt\":" + fields[3] + ",\"status\":\"active\"}";
+}
+static bool __builtin_workflow_complete(const std::string& path, const std::string& id) {
+    std::lock_guard<std::mutex> lock(__alaco_workflow_mutex);
+    return __alaco_workflow_append(path, id, {}, {}, 0, "D");
+}
+static bool __builtin_workflow_is_complete(const std::string& path, const std::string& id) {
+    std::lock_guard<std::mutex> lock(__alaco_workflow_mutex);
+    auto fields = __alaco_workflow_latest(path, id);
+    return fields.size() == 5 && fields[4] == "D";
+}
+"#);
+        self.push_line("");
+    }
+
+    fn generate_schema_runtime(&mut self) {
+        self.push_line("static std::string __builtin_schema_wrap(const std::string& name, long long version, const std::string& payload) { if (name.empty() || version < 1 || !__builtin_json_is_valid(payload)) return {}; return std::string(\"{\\\"$schema\\\":\\\"alaco\\\",\\\"name\\\":\\\"\") + __builtin_json_escape(name) + \"\\\",\\\"version\\\":\" + std::to_string(version) + \",\\\"payload\\\":\" + payload + \"}\"; }");
+        self.push_line("static bool __alaco_schema_envelope(const std::string& document) { return __builtin_json_get_string(document, \"$schema\", \"\") == \"alaco\"; }");
+        self.push_line("static std::string __builtin_schema_name(const std::string& document) { return __alaco_schema_envelope(document) ? __builtin_json_get_string(document, \"name\", \"\") : std::string{}; }");
+        self.push_line("static long long __builtin_schema_version(const std::string& document) { return __alaco_schema_envelope(document) ? __builtin_json_get_int(document, \"version\", 0) : 0; }");
+        self.push_line("static std::string __builtin_schema_payload(const std::string& document) { return __alaco_schema_envelope(document) ? __builtin_json_get_raw(document, \"payload\") : std::string{}; }");
+        self.push_line("static bool __builtin_schema_matches(const std::string& document, const std::string& name, long long minimum, long long maximum) { auto version = __builtin_schema_version(document); return minimum >= 1 && maximum >= minimum && __builtin_schema_name(document) == name && version >= minimum && version <= maximum && !__builtin_schema_payload(document).empty(); }");
         self.push_line("");
     }
 

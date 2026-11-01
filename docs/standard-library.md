@@ -263,6 +263,10 @@ Runnable examples: `examples/http_demo.aco`, `examples/json_demo.aco`, `examples
 | Read simple TOML settings | `std.toml` | Supports a limited subset, not full TOML 1.0 |
 | HTTP GET / JSON POST | `std.http` | Structured JSON response text is available; no headers or async API |
 | Timestamp and sleep | `std.timing` | Whole-second timestamp and millisecond sleep |
+| Named state machines | `std.state` | Runtime-checked transitions; process-local state |
+| Event streams | `std.events` | In-process cursor polling; no persistence or backpressure |
+| Durable workflow checkpoints | `std.workflow` | Application-owned retries and idempotency; append-only journal |
+| Versioned JSON envelopes | `std.schema` | Migrations are explicit Alaco functions; no generated typed validators |
 
 ## `std.timing` — basic time utilities
 
@@ -272,6 +276,61 @@ Import with `import std.timing;`.
 | --- | --- |
 | `unix_seconds()` | Current Unix timestamp in whole seconds. |
 | `sleep_ms(milliseconds: Int)` | Pause the current thread for the requested number of milliseconds; non-positive values do nothing. |
+
+## `std.state` — checked state machines
+
+Import with `import std.state;`. A machine is identified by a string key. Register its allowed directed edges, create an instance at an initial state, and transition only along a registered edge.
+
+| Function | Behavior |
+| --- | --- |
+| `allow(machine, origin, to)` | Register one transition edge. Returns false for empty names, self-transitions, or an edge already registered. |
+| `create(machine, initial)` | Create a machine instance. Returns false if the key already exists or an argument is empty. |
+| `current(machine)` | Return the current state, or `""` for an unknown machine. |
+| `transition(machine, next)` | Move to `next` only if the edge from the current state was registered. Returns false otherwise. |
+| `reset(machine, initial)` | Set or replace the current state. This intentionally bypasses the transition graph and should be reserved for recovery/administrative code. |
+
+The native runtime protects machine data with a mutex. Machine definitions and current values are process-local and are not persisted; use `std.workflow` checkpoints when a state must survive a restart. The graph is checked at runtime rather than statically exhaustively checked by the compiler. Machine keys are global within one process, so include an instance identifier in the key when an application needs multiple instances of the same logical machine.
+
+## `std.events` — in-process event streams
+
+Import with `import std.events;`. Streams are append-only during the current process and assign monotonically increasing integer IDs independently per stream.
+
+| Function | Behavior |
+| --- | --- |
+| `publish(stream, payload)` | Append a string payload and return its event ID, or `-1` for an empty stream name. |
+| `read_after(stream, cursor)` | Return a JSON array of `{id, payload}` records whose IDs are greater than `cursor`. An unknown stream returns `[]`. |
+| `latest_id(stream)` | Return the latest ID, or `0` when the stream has no events. |
+
+Consumers persist their own cursor and call `read_after` to continue. The current implementation is synchronous, process-local polling: it does not persist events, provide callback subscriptions, bound the in-memory buffer, or provide cross-process delivery/backpressure. Do not treat event IDs as durable offsets across restarts.
+
+## `std.workflow` — durable checkpoints
+
+Import with `import std.workflow;`. A workflow journal is an append-only file. Each checkpoint stores a workflow ID, step name, opaque string payload, caller-supplied attempt number, and active/completed status. Fields are encoded so newlines and delimiters in values do not corrupt the journal.
+
+| Function | Behavior |
+| --- | --- |
+| `checkpoint(journal, id, step, payload, attempt)` | Append an active checkpoint and synchronously flush it to durable storage (`fsync` on native builds and `fsyncSync` on Node). Rejects empty paths/IDs and negative attempts. |
+| `resume(journal, id)` | Return the latest active checkpoint as JSON with `id`, `step`, `payload`, `attempt`, and `status`; return `""` if no active checkpoint exists or the latest record is complete. |
+| `complete(journal, id)` | Append a completion marker. |
+| `is_complete(journal, id)` | Check whether the latest journal record marks the workflow complete. |
+
+This provides durable checkpoint/restart recovery, not a background scheduler or an exactly-once execution engine. Your application owns step dispatch, retry policy (including incrementing `attempt`), idempotency for external side effects, and when to call `complete`. Use a separate journal per application or coordinate concurrent writers; this initial journal format does not provide cross-process locking, compaction, or encryption. Keep journal files in a protected directory because payloads are stored as plaintext.
+
+## `std.schema` — versioned JSON envelopes
+
+Import with `import std.schema;`. The module wraps an arbitrary valid JSON payload in a small envelope containing the marker `"$schema": "alaco"`, a schema name, and a positive integer version.
+
+| Function | Behavior |
+| --- | --- |
+| `wrap(name, version, payload)` | Create a versioned envelope. Returns `""` for an empty name, a non-positive version, or invalid JSON payload. |
+| `name(document)` | Return the schema name for a valid Alaco envelope, otherwise `""`. |
+| `version(document)` | Return its positive version, or `0` when the document is not a recognized envelope. |
+| `payload(document)` | Return the original JSON payload text, or `""` for an invalid envelope. |
+| `matches(document, expected_name, minimum_version, maximum_version)` | Check the marker, name, and inclusive version range. |
+
+Schema migrations are ordinary typed Alaco functions: inspect `version`, decode fields from `payload` with `std.json`, construct the new JSON value, and call `wrap` with the new version. This keeps application-specific transformations explicit and testable. The envelope does not yet generate typed records, validate required fields, infer compatibility, or automatically discover/run migration functions. Validate each migration's output before persisting it.
+
+See `examples/state_systems.aco` for a combined example. Its workflow checkpoint is written to `workflow.journal` in the process working directory; run it a second time to exercise resume, then remove the journal when finished.
 
 ## Example
 

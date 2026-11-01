@@ -94,6 +94,29 @@ function __builtin_http_response(url) { return JSON.stringify(__alaco_http_reque
 function __builtin_http_post_response(url, body) { return JSON.stringify(__alaco_http_request(url, body)); }
 function __builtin_time_unix_seconds() { return Math.floor(Date.now() / 1000); }
 function __builtin_time_sleep_ms(ms) { if (ms > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
+const __alaco_states = new Map();
+const __alaco_state_edges = new Map();
+function __builtin_state_allow(machine, from, to) { if (!machine || !from || !to || from === to) return false; if (!__alaco_state_edges.has(machine)) __alaco_state_edges.set(machine, new Set()); const edges = __alaco_state_edges.get(machine), key = from + '\u0000' + to; if (edges.has(key)) return false; edges.add(key); return true; }
+function __builtin_state_create(machine, initial) { if (!machine || !initial || __alaco_states.has(machine)) return false; __alaco_states.set(machine, initial); return true; }
+function __builtin_state_current(machine) { return __alaco_states.get(machine) ?? ''; }
+function __builtin_state_transition(machine, next) { const current = __alaco_states.get(machine), edges = __alaco_state_edges.get(machine); if (current === undefined || !edges?.has(current + '\u0000' + next)) return false; __alaco_states.set(machine, next); return true; }
+function __builtin_state_reset(machine, initial) { if (!machine || !initial) return false; __alaco_states.set(machine, initial); return true; }
+const __alaco_event_streams = new Map();
+function __builtin_events_publish(stream, payload) { if (!stream) return -1; if (!__alaco_event_streams.has(stream)) __alaco_event_streams.set(stream, []); const events = __alaco_event_streams.get(stream), id = events.length ? events[events.length - 1].id + 1 : 1; events.push({id, payload}); return id; }
+function __builtin_events_read_after(stream, cursor) { return JSON.stringify((__alaco_event_streams.get(stream) ?? []).filter(event => event.id > cursor)); }
+function __builtin_events_latest_id(stream) { const events = __alaco_event_streams.get(stream) ?? []; return events.length ? events[events.length - 1].id : 0; }
+function __alaco_workflow_hex(value) { return Buffer.from(value, 'utf8').toString('hex'); }
+function __alaco_workflow_unhex(value) { return Buffer.from(value, 'hex').toString('utf8'); }
+function __alaco_workflow_records(path) { try { return __alaco_fs.readFileSync(path, 'utf8').split(/\r?\n/).filter(Boolean).map(line => line.split('|')).filter(fields => fields.length === 5); } catch { return []; } }
+function __builtin_workflow_checkpoint(path, id, step, payload, attempt) { if (!path || !id || !Number.isSafeInteger(attempt) || attempt < 0) return false; try { const line = [id, step, payload].map(__alaco_workflow_hex).join('|') + '|' + attempt + '|A\n'; const fd = __alaco_fs.openSync(path, 'a'); try { __alaco_fs.writeSync(fd, line); __alaco_fs.fsyncSync(fd); } finally { __alaco_fs.closeSync(fd); } return true; } catch { return false; } }
+function __builtin_workflow_resume(path, id) { const encoded = __alaco_workflow_hex(id); let latest; for (const fields of __alaco_workflow_records(path)) if (fields[0] === encoded) latest = fields; if (!latest || latest[4] !== 'A') return ''; try { return JSON.stringify({id, step:__alaco_workflow_unhex(latest[1]), payload:__alaco_workflow_unhex(latest[2]), attempt:Number(latest[3]), status:'active'}); } catch { return ''; } }
+function __builtin_workflow_complete(path, id) { if (!path || !id) return false; try { const fd = __alaco_fs.openSync(path, 'a'); try { __alaco_fs.writeSync(fd, [id, '', ''].map(__alaco_workflow_hex).join('|') + '|0|D\n'); __alaco_fs.fsyncSync(fd); } finally { __alaco_fs.closeSync(fd); } return true; } catch { return false; } }
+function __builtin_workflow_is_complete(path, id) { const encoded = __alaco_workflow_hex(id); let latest; for (const fields of __alaco_workflow_records(path)) if (fields[0] === encoded) latest = fields; return latest?.[4] === 'D'; }
+function __builtin_schema_wrap(name, version, payload) { if (!name || !Number.isSafeInteger(version) || version < 1) return ''; try { const value = JSON.parse(payload); return JSON.stringify({$schema:'alaco', name, version, payload:value}); } catch { return ''; } }
+function __builtin_schema_name(document) { try { const value = JSON.parse(document); return value?.$schema === 'alaco' && typeof value.name === 'string' ? value.name : ''; } catch { return ''; } }
+function __builtin_schema_version(document) { try { const value = JSON.parse(document); return value?.$schema === 'alaco' && Number.isSafeInteger(value.version) ? value.version : 0; } catch { return 0; } }
+function __builtin_schema_payload(document) { try { const value = JSON.parse(document); return value?.$schema === 'alaco' && Object.prototype.hasOwnProperty.call(value, 'payload') ? JSON.stringify(value.payload) : ''; } catch { return ''; } }
+function __builtin_schema_matches(document, name, minimum, maximum) { const version = __builtin_schema_version(document); return minimum >= 1 && maximum >= minimum && __builtin_schema_name(document) === name && version >= minimum && version <= maximum && __builtin_schema_payload(document) !== ''; }
 "#);
         self.line("");
         for enumeration in &ir.enums {

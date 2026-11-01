@@ -255,6 +255,12 @@ For these local imports, the importing directory can contain `helpers.aco` as we
 
 See the [standard-library reference](standard-library.md) for available modules and their behavior.
 
+### State, events, workflows, and schema evolution
+
+Alaco includes first-party modules for stateful applications: `std.state` enforces a registered transition graph at runtime, `std.events` provides cursor-based in-process event streams, `std.workflow` persists checkpoints to an append-only journal for restart recovery, and `std.schema` wraps JSON payloads in named, versioned envelopes. These APIs are implemented by compiler-provided runtime hooks for both native and JavaScript output; applications do not need third-party packages for the core mechanisms.
+
+The first release is intentionally explicit rather than magical. State graphs and event streams are process-local. Workflow code owns scheduling, retries, idempotency, and step execution; the journal makes checkpoints recoverable but does not provide exactly-once side effects. Schema migrations are ordinary Alaco functions that transform one version to another; the compiler does not generate field validators or automatically run a migration registry. See the [standard-library reference](standard-library.md#stdstate--checked-state-machines) and `examples/state_systems.aco` for the APIs and their current guarantees.
+
 ### Import resolution notes
 
 - `import helpers;` resolves to `helpers.aco` next to the importing file.

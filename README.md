@@ -97,8 +97,8 @@ Put test programs in `tests/` with one `.aco` file per test. Each file is compil
 
 ## Documentation
 
-- [Language guide](docs/language-guide.md) — syntax, types, functions, control flow, enums and exhaustive matching, structs, imports, and shell expressions.
-- [Standard library reference](docs/standard-library.md) — module APIs, return values, and runtime limitations.
+- [Language guide](docs/language-guide.md) — syntax, types, functions, control flow, enums and exhaustive matching, structs, imports, shell expressions, and built-in stateful application systems.
+- [Standard library reference](docs/standard-library.md) — module APIs, return values, and runtime limitations, including state, event streams, durable workflow checkpoints, and schema versioning.
 - [Project workflow](docs/project-workflow.md) — create a project, use the check-run-build cycle, resolve local modules, and interpret diagnostics.
 - [Examples catalog](examples/README.md) — runnable examples grouped by language feature, module, and package workflow, including an intentional diagnostic fixture.
 - [Editor support](editors/README.md) — VS Code, Neovim, and Vim syntax highlighting, compiler commands, and LSP integration.
@@ -120,7 +120,7 @@ fn main() {
 
 `std.io` is available by default. Other modules must be imported explicitly. See the full [standard-library reference](docs/standard-library.md) for all currently documented modules.
 
-The standard library includes integer math, string composition, statistics, unit conversion, validation, filesystem, environment, path, JSON text, basic TOML syntax checking, HTTP GET/JSON POST, and timing helpers. The JSON/TOML/HTTP APIs are intentionally small today; see the reference for their limitations. The language also supports `previous name` for the value before an assignment and synchronous `when condition { ... }` checks within a lexical block.
+The standard library includes integer math, string composition, statistics, unit conversion, validation, filesystem, environment, path, JSON text, basic TOML syntax checking, HTTP GET/JSON POST, timing, checked state machines, in-process event streams, durable workflow checkpoints, and versioned JSON envelopes. The JSON/TOML/HTTP APIs are intentionally small today; see the reference for their limitations and the exact guarantees of the stateful application APIs. The language also supports `previous name` for the value before an assignment and synchronous `when condition { ... }` checks within a lexical block.
 
 ## Compiler diagnostics
 

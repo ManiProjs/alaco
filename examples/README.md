@@ -36,6 +36,7 @@ alaco check examples/type_safety.aco
 | `toml_demo.aco` | Validation and reading simple scalar TOML settings |
 | `config_app.aco` | Reading JSON/TOML configuration values and checking environment setup |
 | `http_demo.aco` | HTTPS GET from `example.com`; requires network access |
+| `state_systems.aco` | Checked state transitions, cursor-based events, durable workflow resume, and explicit schema migration |
 
 ## Modules and packages
 

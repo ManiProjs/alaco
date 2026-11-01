@@ -2469,4 +2469,103 @@ struct Person {
             "418\nnope\nfalse\nHTTP status 418\n"
         );
     }
+
+    #[test]
+    fn state_events_workflows_and_versioned_schemas_run_on_both_backends() {
+        let journal = std::env::temp_dir().join(format!(
+            "alaco_workflow_runtime_{}.journal",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&journal);
+        let source = format!(
+            r#"
+                import std.state;
+                import std.events;
+                import std.workflow;
+                import std.schema;
+
+                fn main() {{
+                    state.allow("download", "idle", "running");
+                    state.allow("download", "running", "done");
+                    state.create("download", "idle");
+                    println(state.transition("download", "done"));
+                    println(state.transition("download", "running"));
+                    println(state.current("download"));
+
+                    events.publish("downloads", "started\nnow");
+                    events.publish("downloads", "finished");
+                    println(events.read_after("downloads", 0));
+                    println(events.latest_id("downloads"));
+
+                    let document = schema.wrap("account", 2, "{{\"name\":\"Ada\"}}");
+                    println(schema.matches(document, "account", 1, 2));
+                    println(schema.version(document));
+                    println(schema.payload(document));
+
+                    let saved = workflow.resume("{journal}", "job-42");
+                    if saved == "" {{
+                        workflow.checkpoint("{journal}", "job-42", "charged", "{{\"amount\":42}}", 2);
+                        println("checkpointed");
+                    }} else {{
+                        println(saved);
+                        workflow.complete("{journal}", "job-42");
+                        println(workflow.is_complete("{journal}", "job-42"));
+                    }}
+                }}
+            "#,
+            journal = journal
+                .to_string_lossy()
+                .replace('\\', "\\\\")
+                .replace('"', "\\\"")
+        );
+        let native_path =
+            std::env::temp_dir().join(format!("alaco_state_systems_native_{}", std::process::id()));
+        Compiler::build(&source, "state_systems_regression.aco", &native_path)
+            .expect("native state/event/workflow/schema program should compile");
+        let first = std::process::Command::new(&native_path)
+            .output()
+            .expect("run initial native workflow process");
+        assert!(first.status.success());
+        let expected_first = "false\ntrue\nrunning\n[{\"id\":1,\"payload\":\"started\\nnow\"},{\"id\":2,\"payload\":\"finished\"}]\n2\ntrue\n2\n{\"name\":\"Ada\"}\ncheckpointed\n";
+        assert_eq!(String::from_utf8_lossy(&first.stdout), expected_first);
+        let second = std::process::Command::new(&native_path)
+            .output()
+            .expect("run resumed native workflow process");
+        assert!(second.status.success());
+        let native_output = String::from_utf8_lossy(&second.stdout);
+        let expected_resume = "false\ntrue\nrunning\n[{\"id\":1,\"payload\":\"started\\nnow\"},{\"id\":2,\"payload\":\"finished\"}]\n2\ntrue\n2\n{\"name\":\"Ada\"}\n{\"id\":\"job-42\",\"step\":\"charged\",\"payload\":\"{\\\"amount\\\":42}\",\"attempt\":2,\"status\":\"active\"}\ntrue\n";
+        assert_eq!(native_output, expected_resume);
+
+        let _ = std::fs::remove_file(&journal);
+        let javascript = Compiler::transpile_javascript(&source, "state_systems_regression.aco")
+            .expect("JavaScript state/event/workflow/schema program should transpile");
+        let javascript_path =
+            std::env::temp_dir().join(format!("alaco_state_systems_{}.js", std::process::id()));
+        std::fs::write(&javascript_path, javascript).expect("write generated JavaScript");
+        let first = std::process::Command::new("node")
+            .arg(&javascript_path)
+            .output()
+            .expect("run initial JavaScript workflow process");
+        assert!(
+            first.status.success(),
+            "{}",
+            String::from_utf8_lossy(&first.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&first.stdout), expected_first);
+        let second = std::process::Command::new("node")
+            .arg(&javascript_path)
+            .output()
+            .expect("run resumed JavaScript workflow process");
+        assert!(
+            second.status.success(),
+            "{}",
+            String::from_utf8_lossy(&second.stderr)
+        );
+        let javascript_output = String::from_utf8_lossy(&second.stdout);
+        assert_eq!(javascript_output, expected_resume);
+
+        let _ = std::fs::remove_file(native_path);
+        let _ = std::fs::remove_file(javascript_path);
+        let _ = std::fs::remove_file(journal);
+    }
 }

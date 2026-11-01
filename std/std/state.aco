@@ -1,0 +1,22 @@
+// Named state machines with an explicit transition graph.
+// Register allowed edges before transitioning a machine.
+fn allow(machine: String, origin: String, to: String) -> Bool {
+    return __builtin_state_allow(machine, origin, to);
+}
+
+fn create(machine: String, initial: String) -> Bool {
+    return __builtin_state_create(machine, initial);
+}
+
+fn current(machine: String) -> String {
+    return __builtin_state_current(machine);
+}
+
+// Returns false when the machine is unknown or the edge is not allowed.
+fn transition(machine: String, next: String) -> Bool {
+    return __builtin_state_transition(machine, next);
+}
+
+fn reset(machine: String, initial: String) -> Bool {
+    return __builtin_state_reset(machine, initial);
+}

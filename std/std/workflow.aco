@@ -1,0 +1,18 @@
+// Durable workflow journal. Each checkpoint is appended before the call
+// returns; resume reads the latest record for an ID after process restart.
+fn checkpoint(journal: String, id: String, step: String, payload: String, attempt: Int) -> Bool {
+    return __builtin_workflow_checkpoint(journal, id, step, payload, attempt);
+}
+
+// Returns a JSON object with id, step, payload, attempt, and status, or "".
+fn resume(journal: String, id: String) -> String {
+    return __builtin_workflow_resume(journal, id);
+}
+
+fn complete(journal: String, id: String) -> Bool {
+    return __builtin_workflow_complete(journal, id);
+}
+
+fn is_complete(journal: String, id: String) -> Bool {
+    return __builtin_workflow_is_complete(journal, id);
+}

@@ -1,0 +1,14 @@
+// In-process append-only event streams. Event IDs are monotonically increasing
+// within this process; consumers keep a cursor and request events after it.
+fn publish(stream: String, payload: String) -> Int {
+    return __builtin_events_publish(stream, payload);
+}
+
+// Returns a JSON array of {id, payload} records with id > cursor.
+fn read_after(stream: String, cursor: Int) -> String {
+    return __builtin_events_read_after(stream, cursor);
+}
+
+fn latest_id(stream: String) -> Int {
+    return __builtin_events_latest_id(stream);
+}

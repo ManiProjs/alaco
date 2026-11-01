@@ -552,6 +552,77 @@ impl<'a> Analyzer<'a> {
                 ("__builtin_http_is_url", vec![Type::String], Type::Bool),
                 ("__builtin_time_unix_seconds", vec![], Type::Int),
                 ("__builtin_time_sleep_ms", vec![Type::Int], Type::Void),
+                (
+                    "__builtin_state_allow",
+                    vec![Type::String, Type::String, Type::String],
+                    Type::Bool,
+                ),
+                (
+                    "__builtin_state_create",
+                    vec![Type::String, Type::String],
+                    Type::Bool,
+                ),
+                ("__builtin_state_current", vec![Type::String], Type::String),
+                (
+                    "__builtin_state_transition",
+                    vec![Type::String, Type::String],
+                    Type::Bool,
+                ),
+                (
+                    "__builtin_state_reset",
+                    vec![Type::String, Type::String],
+                    Type::Bool,
+                ),
+                (
+                    "__builtin_events_publish",
+                    vec![Type::String, Type::String],
+                    Type::Int,
+                ),
+                (
+                    "__builtin_events_read_after",
+                    vec![Type::String, Type::Int],
+                    Type::String,
+                ),
+                ("__builtin_events_latest_id", vec![Type::String], Type::Int),
+                (
+                    "__builtin_workflow_checkpoint",
+                    vec![
+                        Type::String,
+                        Type::String,
+                        Type::String,
+                        Type::String,
+                        Type::Int,
+                    ],
+                    Type::Bool,
+                ),
+                (
+                    "__builtin_workflow_resume",
+                    vec![Type::String, Type::String],
+                    Type::String,
+                ),
+                (
+                    "__builtin_workflow_complete",
+                    vec![Type::String, Type::String],
+                    Type::Bool,
+                ),
+                (
+                    "__builtin_workflow_is_complete",
+                    vec![Type::String, Type::String],
+                    Type::Bool,
+                ),
+                (
+                    "__builtin_schema_wrap",
+                    vec![Type::String, Type::Int, Type::String],
+                    Type::String,
+                ),
+                ("__builtin_schema_name", vec![Type::String], Type::String),
+                ("__builtin_schema_version", vec![Type::String], Type::Int),
+                ("__builtin_schema_payload", vec![Type::String], Type::String),
+                (
+                    "__builtin_schema_matches",
+                    vec![Type::String, Type::String, Type::Int, Type::Int],
+                    Type::Bool,
+                ),
             ] {
                 functions.insert(
                     name.to_string(),

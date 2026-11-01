@@ -1,0 +1,48 @@
+import std.state;
+import std.events;
+import std.workflow;
+import std.schema;
+import std.json;
+
+fn upgrade_account(document: String) -> String {
+    let old_version = schema.version(document);
+    if old_version == 1 {
+        let old_payload = schema.payload(document);
+        let account_name = json.get_string(old_payload, "name", "unknown");
+        let next_payload = "{\"name\":" + json.quote(account_name) + ",\"active\":true}";
+        return schema.wrap("account", 2, next_payload);
+    }
+    return document;
+}
+
+fn main() {
+    // Define a transition graph, then create and advance a machine instance.
+    state.allow("download", "idle", "connecting");
+    state.allow("download", "connecting", "complete");
+    state.create("download", "idle");
+    println(state.transition("download", "connecting"));
+    println(state.current("download"));
+
+    // Streams use monotonically increasing IDs as consumer cursors.
+    events.publish("download-events", "connection-established");
+    events.publish("download-events", "download-finished");
+    println(events.read_after("download-events", 0));
+
+    // Schema envelopes preserve a version; migration code is ordinary Alaco.
+    let old_account = schema.wrap("account", 1, "{\"name\":\"Ada\"}");
+    let current_account = upgrade_account(old_account);
+    println(schema.version(current_account));
+    println(schema.payload(current_account));
+
+    // A checkpoint is synchronously appended and synced to the journal.
+    // Run this program again to see the saved step recovered after restart.
+    let saved = workflow.resume("workflow.journal", "download-42");
+    if saved == "" {
+        workflow.checkpoint("workflow.journal", "download-42", "fetching", "{\"bytes\":1024}", 1);
+        println("workflow checkpointed; run again to resume");
+    } else {
+        println(saved);
+        workflow.complete("workflow.journal", "download-42");
+        println("workflow completed");
+    }
+}
