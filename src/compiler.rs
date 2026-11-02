@@ -2047,6 +2047,80 @@ struct Person {
     }
 
     #[test]
+    fn derived_values_recompute_chains_on_native_and_javascript_backends() {
+        let source = r#"
+            fn main() {
+                let mut price = 100;
+                let mut quantity = 3;
+                derive total = price * quantity;
+                derive discounted = total >= 250;
+                println(total);
+                println(discounted);
+                quantity = 1;
+                println(total);
+                println(discounted);
+                price = 300;
+                println(total);
+                println(discounted);
+
+                let mut counter = 0;
+                derive doubled = counter * 2;
+                loop (repeat 2) {
+                    counter += 1;
+                    println(doubled);
+                }
+                if counter == 2 {
+                    counter = 5;
+                    println(doubled);
+                }
+            }
+        "#;
+        let expected = "300\ntrue\n100\nfalse\n300\ntrue\n2\n4\n10\n";
+        let native_path =
+            std::env::temp_dir().join(format!("alaco_derived_{}", std::process::id()));
+        Compiler::build(source, "derived_values_test.aco", &native_path).expect("native build");
+        let native = Command::new(&native_path)
+            .output()
+            .expect("run native output");
+        let _ = std::fs::remove_file(&native_path);
+        assert!(native.status.success());
+        assert_eq!(String::from_utf8_lossy(&native.stdout), expected);
+
+        let javascript = Compiler::transpile_javascript(source, "derived_values_test.aco")
+            .expect("JS transpile");
+        let js = Command::new("node")
+            .arg("-e")
+            .arg(javascript)
+            .output()
+            .expect("run Node.js");
+        assert!(
+            js.status.success(),
+            "{}",
+            String::from_utf8_lossy(&js.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&js.stdout), expected);
+    }
+
+    #[test]
+    fn derived_values_reject_circular_dependencies() {
+        let error = Compiler::check(
+            "fn main() { let seed = 1; derive first = second + seed; derive second = first + seed; }",
+            "derived_cycle_test.aco",
+        ).expect_err("cycles must be rejected");
+        assert!(format!("{error:?}").contains("circular derived-value dependency"));
+    }
+
+    #[test]
+    fn derived_values_cannot_be_assigned_directly() {
+        let error = Compiler::check(
+            "fn main() { let mut source = 1; derive result = source + 1; result = 9; }",
+            "derived_assignment_test.aco",
+        )
+        .expect_err("derived values are compiler-managed");
+        assert!(format!("{error:?}").contains("cannot assign directly to derived value"));
+    }
+
+    #[test]
     fn timed_variables_clear_their_value_and_reject_access_after_expiry() {
         let source = r#"
             import std.timing;

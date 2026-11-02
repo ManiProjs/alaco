@@ -20,6 +20,7 @@ alaco check examples/type_safety.aco
 | `shell.aco` | Running a host shell command and printing its result |
 | `type_safety.aco` | Typed structs and passing a struct to a function |
 | `previous_when.aco` | Previous variable values and edge-triggered `when` blocks |
+| `derived_values.aco` | Dependency-tracked derived values and chained recalculation |
 | `timed_variables.aco` | Variables whose values are automatically cleared after a duration |
 | `math_toolkit.aco` | Integer math, primality, statistics, and port validation |
 | `geometry_report.aco` | Geometry calculations, statistics, and unit conversion |

@@ -120,6 +120,7 @@ pub fn validate_expression_coverage(
         for s in &b.statements {
             match s {
                 ast::Stmt::Let { value, .. }
+                | ast::Stmt::Derive { value, .. }
                 | ast::Stmt::Destructure { value, .. }
                 | ast::Stmt::Expr(value, _) => expr(value, types, ids)?,
                 ast::Stmt::Return(value, _) | ast::Stmt::Stop(value, _) => {
@@ -483,6 +484,14 @@ fn lower_stmt(stmt: &ast::Stmt, types: &ExpressionTypes, ids: &ExpressionIds) ->
             ty: ty
                 .clone()
                 .unwrap_or_else(|| expression_type(value, types, ids)),
+            value: lower_expr(value, types, ids),
+            span: *span,
+        },
+        ast::Stmt::Derive { name, value, span } => IrStmt::Let {
+            name: name.clone(),
+            mutable: true,
+            lifetime_ms: None,
+            ty: expression_type(value, types, ids),
             value: lower_expr(value, types, ids),
             span: *span,
         },

@@ -963,6 +963,30 @@ impl<'a> Analyzer<'a> {
                 );
             }
 
+            Stmt::Derive { name, value, span } => {
+                let value_type = self.type_of_expression(value, scopes, program, functions)?;
+                if value_type == Type::Void {
+                    return Err(self.error(
+                        "a Void expression cannot initialize a derived value",
+                        Some(value.span()),
+                    ));
+                }
+                let scope = scopes.last_mut().expect("analyzer scope stack is empty");
+                if scope.contains_key(name) {
+                    return Err(AlacoError::DuplicateVariable {
+                        name: name.clone(),
+                        span: (*span).into(),
+                    });
+                }
+                scope.insert(
+                    name.clone(),
+                    Variable {
+                        ty: value_type,
+                        mutable: true,
+                    },
+                );
+            }
+
             Stmt::Destructure {
                 struct_name,
                 mutable,

@@ -156,6 +156,11 @@ pub enum Stmt {
         body: Block,
         span: Span,
     },
+    Derive {
+        name: String,
+        value: Expr,
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -267,6 +272,7 @@ impl Stmt {
             Stmt::Expr(_, span) => *span,
             Stmt::Match { span, .. } => *span,
             Stmt::When { span, .. } => *span,
+            Stmt::Derive { span, .. } => *span,
         }
     }
 }

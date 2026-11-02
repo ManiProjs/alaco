@@ -1,0 +1,19 @@
+// Derived values are recalculated when their source variables change.
+fn main() {
+    let mut price = 100;
+    let mut quantity = 3;
+
+    derive total = price * quantity;
+    derive discount_available = total >= 250;
+
+    println("Initial total: ${total}");
+    println(discount_available);
+
+    quantity = 1;
+    println("Updated total: ${total}");
+    println(discount_available);
+
+    price = 300;
+    println("Updated total: ${total}");
+    println(discount_available);
+}

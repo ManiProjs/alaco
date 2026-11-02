@@ -40,6 +40,7 @@ impl Parser {
         }
 
         let mut program = Program { items };
+        crate::features::expand_derived(&mut program)?;
         crate::features::expand_when(&mut program);
         Ok(program)
     }
@@ -390,6 +391,7 @@ impl Parser {
             TokenKind::If => self.parse_if_statement(),
             TokenKind::Match => self.parse_match_statement(),
             TokenKind::When => self.parse_when_statement(),
+            TokenKind::Derive => self.parse_derive_statement(),
             _ => {
                 let expression = self.parse_expression()?;
                 Ok(Stmt::Expr(expression, span))
@@ -715,6 +717,20 @@ impl Parser {
         Ok(Stmt::When {
             condition,
             body,
+            span: Span { start, end },
+        })
+    }
+
+    fn parse_derive_statement(&mut self) -> Result<Stmt, AlacoError> {
+        let start = self.peek().span.offset();
+        self.consume(&TokenKind::Derive, "expected 'derive'")?;
+        let name = self.consume_identifier("expected derived value name")?;
+        self.consume(&TokenKind::Equal, "expected '=' after derived value name")?;
+        let value = self.parse_expression()?;
+        let end = value.span().end;
+        Ok(Stmt::Derive {
+            name,
+            value,
             span: Span { start, end },
         })
     }

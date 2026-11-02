@@ -123,6 +123,24 @@ The implemented binary operators include arithmetic (`+`, `-`, `*`, `/`, `%`), c
 
 Equality is defined for `Int`, `Float`, `Bool`, and `String`; comparing structs, shell values, or `Void` is rejected. `%` currently requires two `Int` operands.
 
+### Reactive derived values
+
+Use `derive` when a local value should stay synchronized with other variables:
+
+```alaco
+let mut price = 100;
+let mut quantity = 3;
+derive total = price * quantity;
+derive discount_available = total >= 250;
+
+println(total); // 300
+quantity = 1;
+println(total); // 100
+println(discount_available); // false
+```
+
+Alaco records the identifiers used by each derived expression and inserts updates after statements that assign to those dependencies. Derived values can depend on earlier derived values; updates follow declaration order so a chain is recalculated from its sources outward. Unaffected derived expressions are not recalculated. Circular dependencies among derived declarations in the same lexical block are compile-time errors. Declare source variables before the derived values that use them. This is synchronous compiler-generated recalculation, not a background observer or cross-thread reactive system. See `examples/derived_values.aco`.
+
 ### Remembering values and reacting with `when`
 
 `previous name` reads the value of a local variable immediately before its most recent assignment. Its initial previous value is the value established by the variable's declaration (or the function argument's initial value). It currently supports `Int`, `Float`, `Bool`, and `String` locals/parameters.

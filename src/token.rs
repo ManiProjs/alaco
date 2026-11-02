@@ -16,6 +16,7 @@ pub enum TokenKind {
     Repeat,
     While,
     When,
+    Derive,
     Previous,
     For,
     In,
