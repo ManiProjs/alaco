@@ -248,6 +248,28 @@ Use `is_url` only as a lightweight URL check, not a guarantee that the host is r
 
 Runnable examples: `examples/http_demo.aco`, `examples/json_demo.aco`, `examples/toml_demo.aco`, and `examples/type_safety.aco`.
 
+## `std.db` — SQLite databases
+
+Import with `import std.db;`. The module provides synchronous SQLite access on native and JavaScript targets. Native builds link against SQLite 3. JavaScript output uses Node.js's built-in `node:sqlite` module (Node.js 22.5 or newer); no npm package is required.
+
+| Function | Behavior |
+| --- | --- |
+| `open(path)` | Open or create a database and return a positive connection handle, or `0` on failure. Use `error(0)` to inspect an open failure. |
+| `close(connection)` | Close a connection. |
+| `execute(connection, sql, parameters)` | Execute one SQL statement with positional parameters supplied as a JSON array. |
+| `query(connection, sql, parameters)` | Return query rows as a JSON array of objects, or `""` on failure. |
+| `last_insert_id(connection)` | Return SQLite's last inserted row ID. |
+| `changes(connection)` | Return the number of rows changed by the most recent statement. |
+| `error(connection)` | Return the most recent connection error, or an empty string when no error is recorded. |
+| `begin(connection)`, `commit(connection)`, `rollback(connection)` | Start an immediate transaction, commit it, or roll it back. |
+| `migrate(connection, version, sql)` | Apply a versioned SQL script once, recording its version in `_alaco_schema_migrations`. Script and version record commit atomically. |
+
+Parameters must be valid JSON arrays. Strings, integers, floating-point numbers, booleans, and `null` bind as their corresponding SQLite values; nested arrays and objects bind as JSON text. The number of values must exactly match the statement's placeholders. Always bind untrusted values rather than concatenating them into SQL. `execute` and `query` each accept exactly one statement; `migrate` accepts a multi-statement script. Keep transaction-control statements (`BEGIN`, `COMMIT`, and `ROLLBACK`) out of migration scripts because the migration runner manages the transaction. Query results preserve SQLite null, integer, floating-point, and text values as JSON values. BLOB values are returned as lowercase hexadecimal strings.
+
+Connection handles are process-local and must be closed when no longer needed. Operations are synchronous. Each connection enables foreign-key enforcement and uses a five-second busy timeout. This is a direct SQL API rather than an ORM; schema design and typed mapping remain explicit in Alaco code.
+
+Runnable example: `examples/db_demo.aco`.
+
 ## Choosing an API
 
 | Need | Module | Important limitation |
@@ -262,6 +284,7 @@ Runnable examples: `examples/http_demo.aco`, `examples/json_demo.aco`, `examples
 | Validate/read simple JSON | `std.json` | Typed accessors read top-level keys only |
 | Read simple TOML settings | `std.toml` | Supports a limited subset, not full TOML 1.0 |
 | HTTP GET / JSON POST | `std.http` | Structured JSON response text is available; no headers or async API |
+| SQLite storage, transactions, and migrations | `std.db` | Synchronous SQL API; requires SQLite 3 natively or Node.js 22.5+ for JavaScript |
 | Timestamp and sleep | `std.timing` | Whole-second timestamp and millisecond sleep |
 | Named state machines | `std.state` | Runtime-checked transitions; process-local state |
 | Event streams | `std.events` | In-process cursor polling; no persistence or backpressure |

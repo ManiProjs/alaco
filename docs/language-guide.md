@@ -259,6 +259,8 @@ See the [standard-library reference](standard-library.md) for available modules 
 
 Alaco includes first-party modules for stateful applications: `std.state` enforces a registered transition graph at runtime, `std.events` provides cursor-based in-process event streams, `std.workflow` persists checkpoints to an append-only journal for restart recovery, and `std.schema` wraps JSON payloads in named, versioned envelopes. These APIs are implemented by compiler-provided runtime hooks for both native and JavaScript output; applications do not need third-party packages for the core mechanisms.
 
+For persistent relational data, `std.db` provides SQLite connections, parameterized SQL, transactions, and versioned migrations. Native builds require SQLite 3 development headers and a linkable library; JavaScript output uses Node.js 22.5+'s built-in `node:sqlite` module. See the [database reference](standard-library.md#stddb--sqlite-databases) for the API and backend requirements.
+
 The first release is intentionally explicit rather than magical. State graphs and event streams are process-local. Workflow code owns scheduling, retries, idempotency, and step execution; the journal makes checkpoints recoverable but does not provide exactly-once side effects. Schema migrations are ordinary Alaco functions that transform one version to another; the compiler does not generate field validators or automatically run a migration registry. See the [standard-library reference](standard-library.md#stdstate--checked-state-machines) and `examples/state_systems.aco` for the APIs and their current guarantees.
 
 ### Import resolution notes

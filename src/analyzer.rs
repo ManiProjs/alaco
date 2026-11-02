@@ -623,6 +623,26 @@ impl<'a> Analyzer<'a> {
                     vec![Type::String, Type::String, Type::Int, Type::Int],
                     Type::Bool,
                 ),
+                ("__builtin_db_open", vec![Type::String], Type::Int),
+                ("__builtin_db_close", vec![Type::Int], Type::Bool),
+                (
+                    "__builtin_db_execute",
+                    vec![Type::Int, Type::String, Type::String],
+                    Type::Bool,
+                ),
+                (
+                    "__builtin_db_query",
+                    vec![Type::Int, Type::String, Type::String],
+                    Type::String,
+                ),
+                ("__builtin_db_last_insert_id", vec![Type::Int], Type::Int),
+                ("__builtin_db_changes", vec![Type::Int], Type::Int),
+                ("__builtin_db_error", vec![Type::Int], Type::String),
+                (
+                    "__builtin_db_migrate",
+                    vec![Type::Int, Type::Int, Type::String],
+                    Type::Bool,
+                ),
             ] {
                 functions.insert(
                     name.to_string(),

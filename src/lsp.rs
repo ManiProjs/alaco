@@ -408,6 +408,7 @@ impl Server {
             "std.json",
             "std.toml",
             "std.http",
+            "std.db",
             "std.timing",
         ] {
             entries.insert(module.into(), (9, "Alaco standard library module".into()));

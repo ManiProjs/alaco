@@ -98,7 +98,7 @@ Put test programs in `tests/` with one `.aco` file per test. Each file is compil
 ## Documentation
 
 - [Language guide](docs/language-guide.md) — syntax, types, functions, control flow, enums and exhaustive matching, structs, imports, shell expressions, and built-in stateful application systems.
-- [Standard library reference](docs/standard-library.md) — module APIs, return values, and runtime limitations, including state, event streams, durable workflow checkpoints, and schema versioning.
+- [Standard library reference](docs/standard-library.md) — module APIs, return values, and runtime limitations, including SQLite, state, event streams, durable workflow checkpoints, and schema versioning.
 - [Project workflow](docs/project-workflow.md) — create a project, use the check-run-build cycle, resolve local modules, and interpret diagnostics.
 - [Examples catalog](examples/README.md) — runnable examples grouped by language feature, module, and package workflow, including an intentional diagnostic fixture.
 - [Editor support](editors/README.md) — VS Code, Neovim, and Vim syntax highlighting, compiler commands, and LSP integration.

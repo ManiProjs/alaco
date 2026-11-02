@@ -1,0 +1,47 @@
+// SQLite database access. Parameters are JSON arrays and query results are
+// JSON arrays of row objects. Bind values; never interpolate user input into SQL.
+fn open(path: String) -> Int {
+    return __builtin_db_open(path);
+}
+
+fn close(connection: Int) -> Bool {
+    return __builtin_db_close(connection);
+}
+
+fn execute(connection: Int, sql: String, parameters: String) -> Bool {
+    return __builtin_db_execute(connection, sql, parameters);
+}
+
+fn query(connection: Int, sql: String, parameters: String) -> String {
+    return __builtin_db_query(connection, sql, parameters);
+}
+
+fn last_insert_id(connection: Int) -> Int {
+    return __builtin_db_last_insert_id(connection);
+}
+
+fn changes(connection: Int) -> Int {
+    return __builtin_db_changes(connection);
+}
+
+fn error(connection: Int) -> String {
+    return __builtin_db_error(connection);
+}
+
+fn begin(connection: Int) -> Bool {
+    return execute(connection, "BEGIN IMMEDIATE", "[]");
+}
+
+fn commit(connection: Int) -> Bool {
+    return execute(connection, "COMMIT", "[]");
+}
+
+fn rollback(connection: Int) -> Bool {
+    return execute(connection, "ROLLBACK", "[]");
+}
+
+// Apply a versioned SQL migration once. A migration is atomic: its statements
+// and version record commit together, or neither is retained.
+fn migrate(connection: Int, version: Int, sql: String) -> Bool {
+    return __builtin_db_migrate(connection, version, sql);
+}

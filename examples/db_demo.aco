@@ -1,0 +1,24 @@
+import std.db;
+
+fn main() {
+    let connection = db.open("alaco-demo.sqlite");
+    if connection == 0 {
+        println(db.error(0));
+        return;
+    }
+
+    if db.execute(connection, "CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, title TEXT NOT NULL)", "[]") == false {
+        println(db.error(connection));
+        db.close(connection);
+        return;
+    }
+
+    if db.execute(connection, "INSERT INTO notes (title) VALUES (?)", "[\"A parameterized query\"]") {
+        println(db.last_insert_id(connection));
+    } else {
+        println(db.error(connection));
+    }
+
+    println(db.query(connection, "SELECT id, title FROM notes ORDER BY id", "[]"));
+    db.close(connection);
+}

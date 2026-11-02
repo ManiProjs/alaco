@@ -30,6 +30,7 @@ struct RuntimeRequirements {
     events: bool,
     workflow: bool,
     schema: bool,
+    db: bool,
 }
 
 impl RuntimeRequirements {
@@ -53,6 +54,7 @@ impl RuntimeRequirements {
             || self.events
             || self.workflow
             || self.schema
+            || self.db
     }
 }
 
@@ -276,6 +278,10 @@ impl CppCodegen {
                 "std.json" => requirements.json = true,
                 "std.toml" => requirements.toml = true,
                 "std.http" => requirements.http = true,
+                "std.db" => {
+                    requirements.db = true;
+                    requirements.json = true;
+                }
                 "std.timing" => requirements.time = true,
                 "std.state" => requirements.state = true,
                 "std.events" => requirements.events = true,
@@ -508,6 +514,14 @@ impl CppCodegen {
                         "__builtin_http_response"
                         | "__builtin_http_post_response"
                         | "__builtin_http_is_url" => requirements.http = true,
+                        "__builtin_db_open"
+                        | "__builtin_db_close"
+                        | "__builtin_db_execute"
+                        | "__builtin_db_query"
+                        | "__builtin_db_last_insert_id"
+                        | "__builtin_db_changes"
+                        | "__builtin_db_error"
+                        | "__builtin_db_migrate" => requirements.db = true,
                         "__builtin_time_unix_seconds" | "__builtin_time_sleep_ms" => {
                             requirements.time = true
                         }
@@ -644,6 +658,11 @@ impl CppCodegen {
             self.push_line("#endif");
         }
 
+        if requirements.db {
+            self.push_line("#include <sqlite3.h>");
+            self.push_line("#include <unordered_map>");
+        }
+
         if requirements.time {
             self.push_line("#include <chrono>");
             self.push_line("#include <thread>");
@@ -754,6 +773,9 @@ impl CppCodegen {
         }
         if requirements.schema {
             self.generate_schema_runtime();
+        }
+        if requirements.db {
+            self.generate_db_runtime();
         }
 
         self.push_line("// End Alaco runtime");
@@ -913,7 +935,7 @@ impl CppCodegen {
         self.push_line("    bool number_value() { std::size_t start = pos; if (pos < text.size() && text[pos] == '-') ++pos; if (pos >= text.size()) return false; if (text[pos] == '0') ++pos; else { if (!std::isdigit(static_cast<unsigned char>(text[pos]))) return false; while (pos < text.size() && std::isdigit(static_cast<unsigned char>(text[pos]))) ++pos; } if (pos < text.size() && text[pos] == '.') { ++pos; std::size_t digits = pos; while (pos < text.size() && std::isdigit(static_cast<unsigned char>(text[pos]))) ++pos; if (digits == pos) return false; } if (pos < text.size() && (text[pos] == 'e' || text[pos] == 'E')) { ++pos; if (pos < text.size() && (text[pos] == '+' || text[pos] == '-')) ++pos; std::size_t digits = pos; while (pos < text.size() && std::isdigit(static_cast<unsigned char>(text[pos]))) ++pos; if (digits == pos) return false; } return pos > start; }");
         self.push_line("    bool value() { ws(); if (pos >= text.size()) return false; char c = text[pos]; if (c == '\\\"') return string_value(); if (c == '{') { ++pos; ws(); if (take('}')) return true; do { if (!string_value() || !take(':') || !value()) return false; ws(); if (take('}')) return true; } while (take(',')); return false; } if (c == '[') { ++pos; ws(); if (take(']')) return true; do { if (!value()) return false; ws(); if (take(']')) return true; } while (take(',')); return false; } for (const char* word : {\"true\", \"false\", \"null\"}) { std::string candidate(word); if (text.compare(pos, candidate.size(), candidate) == 0) { pos += candidate.size(); return true; } } return number_value(); }");
         self.push_line("    std::string raw_for_key(const std::string& wanted) { pos = 0; if (!take('{')) return {}; ws(); if (take('}')) return {}; while (pos < text.size()) { ws(); std::size_t key_start = pos; if (!string_value()) return {}; std::size_t key_end = pos; std::string key = __alaco_json_decode(text.substr(key_start, key_end - key_start)); if (!take(':')) return {}; std::size_t value_start = pos; if (!value()) return {}; std::size_t value_end = pos; if (key == wanted) return text.substr(value_start, value_end - value_start); if (!take(',')) break; } return {}; }");
-        self.push_line("public: explicit __AlacoJsonParser(const std::string& source) : text(source) {} bool valid() { if (!value()) return false; ws(); return pos == text.size(); } std::string get_raw(const std::string& key) { if (!valid()) return {}; return raw_for_key(key); }");
+        self.push_line("public: explicit __AlacoJsonParser(const std::string& source) : text(source) {} bool valid() { if (!value()) return false; ws(); return pos == text.size(); } std::string get_raw(const std::string& key) { if (!valid()) return {}; return raw_for_key(key); } std::vector<std::string> array_values() { std::vector<std::string> values; pos = 0; if (!take('[')) return {}; ws(); if (take(']')) { ws(); return pos == text.size() ? values : std::vector<std::string>{}; } while (pos < text.size()) { ws(); std::size_t start = pos; if (!value()) return {}; values.push_back(text.substr(start, pos - start)); if (take(']')) { ws(); return pos == text.size() ? values : std::vector<std::string>{}; } if (!take(',')) return {}; } return {}; }");
         self.push_line("};");
         self.push_line("static bool __builtin_json_is_valid(const std::string& text) { return __AlacoJsonParser(text).valid(); }");
         self.push_line("static std::string __builtin_json_get_raw(const std::string& text, const std::string& key) { return __AlacoJsonParser(text).get_raw(key); }");
@@ -1408,6 +1430,94 @@ static bool __builtin_workflow_is_complete(const std::string& path, const std::s
         self.push_line("static long long __builtin_schema_version(const std::string& document) { return __alaco_schema_envelope(document) ? __builtin_json_get_int(document, \"version\", 0) : 0; }");
         self.push_line("static std::string __builtin_schema_payload(const std::string& document) { return __alaco_schema_envelope(document) ? __builtin_json_get_raw(document, \"payload\") : std::string{}; }");
         self.push_line("static bool __builtin_schema_matches(const std::string& document, const std::string& name, long long minimum, long long maximum) { auto version = __builtin_schema_version(document); return minimum >= 1 && maximum >= minimum && __builtin_schema_name(document) == name && version >= minimum && version <= maximum && !__builtin_schema_payload(document).empty(); }");
+        self.push_line("");
+    }
+
+    fn generate_db_runtime(&mut self) {
+        self.output.push_str(r#"
+static std::unordered_map<long long, sqlite3*> __alaco_databases;
+static std::unordered_map<long long, std::string> __alaco_database_errors;
+static long long __alaco_next_database = 1;
+static std::string __alaco_db_open_error;
+static sqlite3* __alaco_db_get(long long id) { auto it = __alaco_databases.find(id); return it == __alaco_databases.end() ? nullptr : it->second; }
+static bool __alaco_db_bind(sqlite3_stmt* statement, const std::string& parameters) {
+    __AlacoJsonParser parser(parameters); if (!parser.valid()) return false;
+    auto values = parser.array_values(); if (values.size() != static_cast<std::size_t>(sqlite3_bind_parameter_count(statement))) return false;
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        const auto& raw = values[i]; int index = static_cast<int>(i + 1); int result = SQLITE_MISMATCH;
+        if (raw == "null") result = sqlite3_bind_null(statement, index);
+        else if (raw == "true" || raw == "false") result = sqlite3_bind_int(statement, index, raw == "true" ? 1 : 0);
+        else if (!raw.empty() && raw.front() == '"') { auto value = __alaco_json_decode(raw); result = sqlite3_bind_text(statement, index, value.data(), static_cast<int>(value.size()), SQLITE_TRANSIENT); }
+        else if (!raw.empty() && (raw.front() == '{' || raw.front() == '[')) result = sqlite3_bind_text(statement, index, raw.data(), static_cast<int>(raw.size()), SQLITE_TRANSIENT);
+        else if (raw.find_first_of(".eE") != std::string::npos) { try { std::size_t n = 0; double value = std::stod(raw, &n); if (n == raw.size()) result = sqlite3_bind_double(statement, index, value); } catch (...) {} }
+        else { try { std::size_t n = 0; long long value = std::stoll(raw, &n); if (n == raw.size()) result = sqlite3_bind_int64(statement, index, value); } catch (...) {} }
+        if (result != SQLITE_OK) return false;
+    }
+    return true;
+}
+static std::string __alaco_db_column(sqlite3_stmt* statement, int column) {
+    switch (sqlite3_column_type(statement, column)) {
+        case SQLITE_NULL: return "null";
+        case SQLITE_INTEGER: return std::to_string(sqlite3_column_int64(statement, column));
+        case SQLITE_FLOAT: { std::ostringstream out; out.precision(17); out << sqlite3_column_double(statement, column); return out.str(); }
+        case SQLITE_BLOB: { const auto* bytes = static_cast<const unsigned char*>(sqlite3_column_blob(statement, column)); int size = sqlite3_column_bytes(statement, column); static const char* hex = "0123456789abcdef"; std::string value; value.reserve(static_cast<std::size_t>(size) * 2); for (int i = 0; i < size; ++i) { value.push_back(hex[bytes[i] >> 4]); value.push_back(hex[bytes[i] & 15]); } return "\"" + value + "\""; }
+        default: { const auto* value = sqlite3_column_text(statement, column); int size = sqlite3_column_bytes(statement, column); return std::string("\"") + __builtin_json_escape(value ? std::string(reinterpret_cast<const char*>(value), static_cast<std::size_t>(size)) : std::string{}) + "\""; }
+    }
+}
+static long long __builtin_db_open(const std::string& path) {
+    __alaco_db_open_error.clear(); if (path.empty()) { __alaco_db_open_error = "database path is empty"; return 0; }
+    sqlite3* database = nullptr; int result = sqlite3_open_v2(path.c_str(), &database, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nullptr);
+    if (result != SQLITE_OK) { __alaco_db_open_error = database ? sqlite3_errmsg(database) : "could not allocate SQLite connection"; if (database) sqlite3_close(database); return 0; }
+    sqlite3_busy_timeout(database, 5000); if (sqlite3_exec(database, "PRAGMA foreign_keys = ON", nullptr, nullptr, nullptr) != SQLITE_OK) { __alaco_db_open_error = sqlite3_errmsg(database); sqlite3_close(database); return 0; } long long id = __alaco_next_database++; __alaco_databases[id] = database; __alaco_database_errors[id].clear(); return id;
+}
+static bool __builtin_db_close(long long id) { auto database = __alaco_db_get(id); if (!database) return false; int result = sqlite3_close(database); if (result != SQLITE_OK) { __alaco_database_errors[id] = sqlite3_errmsg(database); return false; } __alaco_databases.erase(id); __alaco_database_errors.erase(id); return true; }
+static bool __builtin_db_execute(long long id, const std::string& sql, const std::string& parameters) {
+    auto database = __alaco_db_get(id); if (!database) return false; sqlite3_stmt* statement = nullptr; const char* tail = nullptr;
+    int result = sqlite3_prepare_v2(database, sql.c_str(), static_cast<int>(sql.size()), &statement, &tail);
+    if (result != SQLITE_OK || !statement) { __alaco_database_errors[id] = sqlite3_errmsg(database); if (statement) sqlite3_finalize(statement); return false; }
+    while (tail && *tail && std::isspace(static_cast<unsigned char>(*tail))) ++tail;
+    if (tail && *tail) { __alaco_database_errors[id] = "execute accepts exactly one SQL statement"; sqlite3_finalize(statement); return false; }
+    if (!__alaco_db_bind(statement, parameters)) { __alaco_database_errors[id] = "invalid parameter array or parameter count mismatch"; sqlite3_finalize(statement); return false; }
+    result = sqlite3_step(statement); bool success = result == SQLITE_DONE; __alaco_database_errors[id] = success ? std::string{} : sqlite3_errmsg(database); sqlite3_finalize(statement); return success;
+}
+static std::string __builtin_db_query(long long id, const std::string& sql, const std::string& parameters) {
+    auto database = __alaco_db_get(id); if (!database) return {}; sqlite3_stmt* statement = nullptr; const char* tail = nullptr;
+    int result = sqlite3_prepare_v2(database, sql.c_str(), static_cast<int>(sql.size()), &statement, &tail);
+    if (result != SQLITE_OK || !statement) { __alaco_database_errors[id] = sqlite3_errmsg(database); if (statement) sqlite3_finalize(statement); return {}; }
+    while (tail && *tail && std::isspace(static_cast<unsigned char>(*tail))) ++tail;
+    if (tail && *tail) { __alaco_database_errors[id] = "query accepts exactly one SQL statement"; sqlite3_finalize(statement); return {}; }
+    if (!__alaco_db_bind(statement, parameters)) { __alaco_database_errors[id] = "invalid parameter array or parameter count mismatch"; sqlite3_finalize(statement); return {}; }
+    std::string output = "["; bool first_row = true;
+    while ((result = sqlite3_step(statement)) == SQLITE_ROW) {
+        if (!first_row) output += ','; first_row = false; output += '{';
+        for (int column = 0; column < sqlite3_column_count(statement); ++column) {
+            if (column) output += ','; const char* name = sqlite3_column_name(statement, column);
+            output += "\"" + __builtin_json_escape(name ? name : "") + "\":" + __alaco_db_column(statement, column);
+        }
+        output += '}';
+    }
+    bool success = result == SQLITE_DONE; __alaco_database_errors[id] = success ? std::string{} : sqlite3_errmsg(database); sqlite3_finalize(statement);
+    return success ? output + "]" : std::string{};
+}
+static long long __builtin_db_last_insert_id(long long id) { auto database = __alaco_db_get(id); return database ? sqlite3_last_insert_rowid(database) : 0; }
+static long long __builtin_db_changes(long long id) { auto database = __alaco_db_get(id); return database ? sqlite3_changes(database) : 0; }
+static std::string __builtin_db_error(long long id) { if (id == 0) return __alaco_db_open_error; auto it = __alaco_database_errors.find(id); return it == __alaco_database_errors.end() ? std::string("unknown database connection") : it->second; }
+static bool __builtin_db_migrate(long long id, long long version, const std::string& sql) {
+    auto database = __alaco_db_get(id); if (!database || version < 1) return false;
+    char* message = nullptr; auto exec = [&](const char* statement) { int code = sqlite3_exec(database, statement, nullptr, nullptr, &message); if (code != SQLITE_OK) { __alaco_database_errors[id] = message ? message : sqlite3_errmsg(database); sqlite3_free(message); message = nullptr; return false; } return true; };
+    if (!exec("CREATE TABLE IF NOT EXISTS _alaco_schema_migrations (version INTEGER PRIMARY KEY NOT NULL)")) return false;
+    sqlite3_stmt* current = nullptr; if (sqlite3_prepare_v2(database, "SELECT COALESCE(MAX(version), 0) FROM _alaco_schema_migrations", -1, &current, nullptr) != SQLITE_OK) { __alaco_database_errors[id] = sqlite3_errmsg(database); return false; }
+    long long applied = sqlite3_step(current) == SQLITE_ROW ? sqlite3_column_int64(current, 0) : 0; sqlite3_finalize(current);
+    if (version <= applied) { __alaco_database_errors[id].clear(); return true; }
+    if (!exec("BEGIN IMMEDIATE")) return false;
+    if (!exec(sql.c_str())) { sqlite3_exec(database, "ROLLBACK", nullptr, nullptr, nullptr); return false; }
+    sqlite3_stmt* insert = nullptr; bool inserted = sqlite3_prepare_v2(database, "INSERT INTO _alaco_schema_migrations(version) VALUES (?)", -1, &insert, nullptr) == SQLITE_OK;
+    if (inserted) { sqlite3_bind_int64(insert, 1, version); inserted = sqlite3_step(insert) == SQLITE_DONE; }
+    if (insert) sqlite3_finalize(insert);
+    if (!inserted || !exec("COMMIT")) { sqlite3_exec(database, "ROLLBACK", nullptr, nullptr, nullptr); if (__alaco_database_errors[id].empty()) __alaco_database_errors[id] = sqlite3_errmsg(database); return false; }
+    __alaco_database_errors[id].clear(); return true;
+}
+"#);
         self.push_line("");
     }
 

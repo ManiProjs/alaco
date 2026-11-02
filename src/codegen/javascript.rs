@@ -118,6 +118,26 @@ function __builtin_schema_version(document) { try { const value = JSON.parse(doc
 function __builtin_schema_payload(document) { try { const value = JSON.parse(document); return value?.$schema === 'alaco' && Object.prototype.hasOwnProperty.call(value, 'payload') ? JSON.stringify(value.payload) : ''; } catch { return ''; } }
 function __builtin_schema_matches(document, name, minimum, maximum) { const version = __builtin_schema_version(document); return minimum >= 1 && maximum >= minimum && __builtin_schema_name(document) === name && version >= minimum && version <= maximum && __builtin_schema_payload(document) !== ''; }
 "#);
+        if modules.iter().any(|module| module.name == "std.db") {
+            self.output.push_str(r#"
+// SQLite is provided by Node.js 22.5+ through the built-in node:sqlite module.
+const { DatabaseSync: __AlacoDatabaseSync } = require('node:sqlite');
+const __alaco_databases = new Map();
+const __alaco_database_errors = new Map();
+let __alaco_next_database = 1;
+let __alaco_db_open_error = '';
+function __alaco_db_get(id) { return __alaco_databases.get(id); }
+function __alaco_db_params(text) { const values = JSON.parse(text); if (!Array.isArray(values)) throw new Error('parameters must be a JSON array'); return values.map(value => value === null ? null : typeof value === 'boolean' ? Number(value) : typeof value === 'object' ? JSON.stringify(value) : value); }
+function __builtin_db_open(path) { __alaco_db_open_error = ''; if (!path) { __alaco_db_open_error = 'database path is empty'; return 0; } try { const database = new __AlacoDatabaseSync(path); database.exec('PRAGMA foreign_keys = ON'); const id = __alaco_next_database++; __alaco_databases.set(id, database); __alaco_database_errors.set(id, ''); return id; } catch (error) { __alaco_db_open_error = String(error.message ?? error); return 0; } }
+function __builtin_db_close(id) { const database = __alaco_db_get(id); if (!database) return false; try { database.close(); __alaco_databases.delete(id); __alaco_database_errors.delete(id); return true; } catch (error) { __alaco_database_errors.set(id, String(error.message ?? error)); return false; } }
+function __builtin_db_execute(id, sql, parameters) { const database = __alaco_db_get(id); if (!database) return false; try { database.prepare(sql).run(...__alaco_db_params(parameters)); __alaco_database_errors.set(id, ''); return true; } catch (error) { __alaco_database_errors.set(id, String(error.message ?? error)); return false; } }
+function __builtin_db_query(id, sql, parameters) { const database = __alaco_db_get(id); if (!database) return ''; try { const rows = database.prepare(sql).all(...__alaco_db_params(parameters)); __alaco_database_errors.set(id, ''); return JSON.stringify(rows, (_, value) => typeof value === 'bigint' ? Number(value) : value instanceof Uint8Array ? Buffer.from(value).toString('hex') : value); } catch (error) { __alaco_database_errors.set(id, String(error.message ?? error)); return ''; } }
+function __builtin_db_last_insert_id(id) { const database = __alaco_db_get(id); if (!database) return 0; try { return Number(database.prepare('SELECT last_insert_rowid() AS id').get().id); } catch { return 0; } }
+function __builtin_db_changes(id) { const database = __alaco_db_get(id); if (!database) return 0; try { return Number(database.prepare('SELECT changes() AS count').get().count); } catch { return 0; } }
+function __builtin_db_error(id) { return id === 0 ? __alaco_db_open_error : (__alaco_database_errors.get(id) ?? 'unknown database connection'); }
+function __builtin_db_migrate(id, version, sql) { const database = __alaco_db_get(id); if (!database || !Number.isSafeInteger(version) || version < 1) return false; try { database.exec('CREATE TABLE IF NOT EXISTS _alaco_schema_migrations (version INTEGER PRIMARY KEY NOT NULL)'); const current = Number(database.prepare('SELECT COALESCE(MAX(version), 0) AS version FROM _alaco_schema_migrations').get().version); if (version <= current) { __alaco_database_errors.set(id, ''); return true; } database.exec('BEGIN IMMEDIATE'); try { database.exec(sql); database.prepare('INSERT INTO _alaco_schema_migrations(version) VALUES (?)').run(version); database.exec('COMMIT'); __alaco_database_errors.set(id, ''); return true; } catch (error) { database.exec('ROLLBACK'); throw error; } } catch (error) { __alaco_database_errors.set(id, String(error.message ?? error)); return false; } }
+"#);
+        }
         self.line("");
         for enumeration in &ir.enums {
             let variants = enumeration

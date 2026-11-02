@@ -37,6 +37,7 @@ alaco check examples/type_safety.aco
 | `config_app.aco` | Reading JSON/TOML configuration values and checking environment setup |
 | `http_demo.aco` | HTTPS GET from `example.com`; requires network access |
 | `state_systems.aco` | Checked state transitions, cursor-based events, durable workflow resume, and explicit schema migration |
+| `db_demo.aco` | SQLite setup, parameterized inserts, generated row IDs, and JSON query results; creates `alaco-demo.sqlite` in the working directory |
 
 ## Modules and packages
 

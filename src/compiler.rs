@@ -180,6 +180,27 @@ impl Compiler {
                 }
             }
         }
+        if cpp.contains("#include <sqlite3.h>") {
+            match build_target_platform(&config.target) {
+                BuildTargetPlatform::Windows
+                    if config.target.contains("msvc")
+                        || (config.target == "native" && cfg!(target_os = "windows")) =>
+                {
+                    command.arg("sqlite3.lib");
+                }
+                BuildTargetPlatform::Windows
+                | BuildTargetPlatform::Apple
+                | BuildTargetPlatform::Unix => {
+                    command.arg("-lsqlite3");
+                }
+                BuildTargetPlatform::Unknown => {
+                    return Err(miette::miette!(
+                        "the std.db runtime requires a target platform with a linkable SQLite3 library; target '{}' is not configured",
+                        config.target
+                    ));
+                }
+            }
+        }
         let result = command
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
@@ -2468,6 +2489,81 @@ struct Person {
             String::from_utf8_lossy(&result.stdout),
             "418\nnope\nfalse\nHTTP status 418\n"
         );
+    }
+
+    #[test]
+    fn sqlite_database_api_works_on_native_and_javascript_backends() {
+        let database =
+            std::env::temp_dir().join(format!("alaco_db_runtime_{}.sqlite", std::process::id()));
+        let _ = std::fs::remove_file(&database);
+        let database_path = database
+            .to_string_lossy()
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"");
+        let source = format!(
+            r#"
+                import std.db;
+
+                fn main() {{
+                    let connection = db.open("{database_path}");
+                    println(connection > 0);
+                    println(db.migrate(connection, 1, "CREATE TABLE people (id INTEGER PRIMARY KEY, name TEXT NOT NULL, score REAL, active INTEGER, note TEXT); CREATE INDEX people_name ON people(name);"));
+                    println(db.migrate(connection, 1, "THIS MUST NOT RUN"));
+                    println(db.execute(connection, "INSERT INTO people (name, score, active, note) VALUES (?, ?, ?, ?)", "[\"Ada\", 9.5, true, null]"));
+                    println(db.last_insert_id(connection));
+                    println(db.changes(connection));
+                    println(db.query(connection, "SELECT id, name, score, active, note FROM people", "[]"));
+                    println(db.query(connection, "SELECT X'00FF' AS data", "[]"));
+                    println(db.begin(connection));
+                    println(db.execute(connection, "INSERT INTO people (name) VALUES (?)", "[\"Rolled back\"]"));
+                    println(db.rollback(connection));
+                    println(db.query(connection, "SELECT COUNT(*) AS count FROM people", "[]"));
+                    println(db.execute(connection, "INSERT INTO people (name) VALUES (?)", "[]"));
+                    println(db.error(connection) != "");
+                    println(db.close(connection));
+                }}
+            "#
+        );
+        let expected = concat!(
+            "true\ntrue\ntrue\ntrue\n1\n1\n",
+            "[{\"id\":1,\"name\":\"Ada\",\"score\":9.5,\"active\":1,\"note\":null}]\n",
+            "[{\"data\":\"00ff\"}]\n",
+            "true\ntrue\ntrue\n[{\"count\":1}]\nfalse\ntrue\ntrue\n"
+        );
+
+        let native_path =
+            std::env::temp_dir().join(format!("alaco_db_runtime_native_{}", std::process::id()));
+        Compiler::build(&source, "db_runtime_regression.aco", &native_path)
+            .expect("native SQLite program should compile and link");
+        let native = std::process::Command::new(&native_path)
+            .output()
+            .expect("native SQLite program should run");
+        assert!(
+            native.status.success(),
+            "{}",
+            String::from_utf8_lossy(&native.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&native.stdout), expected);
+        let _ = std::fs::remove_file(&native_path);
+        let _ = std::fs::remove_file(&database);
+
+        let javascript = Compiler::transpile_javascript(&source, "db_runtime_regression.aco")
+            .expect("JavaScript SQLite program should transpile");
+        let javascript_path =
+            std::env::temp_dir().join(format!("alaco_db_runtime_{}.js", std::process::id()));
+        std::fs::write(&javascript_path, javascript).expect("write generated JavaScript");
+        let node = std::process::Command::new("node")
+            .arg(&javascript_path)
+            .output()
+            .expect("Node.js should run generated SQLite JavaScript");
+        assert!(
+            node.status.success(),
+            "{}",
+            String::from_utf8_lossy(&node.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&node.stdout), expected);
+        let _ = std::fs::remove_file(&javascript_path);
+        let _ = std::fs::remove_file(&database);
     }
 
     #[test]
