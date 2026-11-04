@@ -5,7 +5,7 @@ Alaco's standard library is written in Alaco and backed by small native runtime 
 ## Conventions and error handling
 
 - Standard modules are imported with `import std.<module>;` and normally accessed through the final module name, such as `fs.exists(path)`.
-- Functions use the return types documented below. APIs that return `Bool` or a sentinel value should be checked when failure matters.
+- Functions use the return types documented below. APIs that return `bool` or a sentinel value should be checked when failure matters.
 - Several APIs intentionally use simple fallbacks instead of rich error values. An empty string may mean either valid empty data or failure; see each module's notes.
 - Filesystem paths generally use the process's current working directory as their base unless the path is absolute.
 - This is a compact standard library, not a full replacement for the platform APIs or mature JSON/TOML/HTTP libraries.
@@ -21,7 +21,7 @@ Available automatically; no import is required.
 | `eprint(value)` | Write a value to standard error without a newline. |
 | `eprintln(value)` | Write a value to standard error followed by a newline. |
 
-Printing supports `String`, `Int`, `Float`, `Bool`, and values with a generated runtime formatter, such as supported structs.
+Printing supports `string`, `int`, `float`, `bool`, and values with a generated runtime formatter, such as supported structs.
 
 Use `print` when output should continue on the same line and `println` when a trailing newline is useful. The `eprint` variants write to standard error and are suitable for diagnostic messages.
 
@@ -96,7 +96,7 @@ Import with `import std.stats;`.
 
 ## `std.units` — unit conversions
 
-Import with `import std.units;`. All functions accept and return `Float`.
+Import with `import std.units;`. All functions accept and return `float`.
 
 | Function | Conversion |
 | --- | --- |
@@ -120,7 +120,7 @@ Import with `import std.validation;`.
 
 | Function | Behavior |
 | --- | --- |
-| `is_non_empty(value: String)` | True when the string is not empty. Whitespace-only strings count as non-empty. |
+| `is_non_empty(value: string)` | True when the string is not empty. Whitespace-only strings count as non-empty. |
 | `is_in_range(value, lower, upper)` | True when an integer lies within inclusive bounds. |
 | `is_positive(value)` | True when an integer is greater than zero. |
 | `is_non_negative(value)` | True when an integer is zero or greater. |
@@ -132,21 +132,21 @@ Import with `import std.validation;`.
 
 ## `std.fs` — filesystem operations
 
-Import with `import std.fs;`. Paths are interpreted relative to the process's current working directory unless absolute. Operations return `Bool` where applicable so callers can check success.
+Import with `import std.fs;`. Paths are interpreted relative to the process's current working directory unless absolute. Operations return `bool` where applicable so callers can check success.
 
 | Function | Return | Behavior and limitations |
 | --- | --- | --- |
-| `read_text(path: String)` | `String` | Read file contents as text. A failed read returns `""`, so failure cannot be distinguished from a successfully read empty file using this function alone. |
-| `write_text(path: String, contents: String)` | `Bool` | Write/truncate a file and report success. |
-| `file_size(path: String)` | `Int` | Return file size in bytes, or `-1` if the size cannot be read. |
-| `copy(source: String, destination: String)` | `Bool` | Copy a file, replacing an existing destination. Returns false if the copy fails. |
-| `exists(path: String)` | `Bool` | Check whether the path exists. |
-| `remove(path: String)` | `Bool` | Remove a file or an empty directory; reports failure as false. |
-| `create_dir(path: String)` | `Bool` | Create a directory and any missing parent directories; reports failure as false. |
+| `read_text(path: string)` | `string` | Read file contents as text. A failed read returns `""`, so failure cannot be distinguished from a successfully read empty file using this function alone. |
+| `write_text(path: string, contents: string)` | `bool` | Write/truncate a file and report success. |
+| `file_size(path: string)` | `int` | Return file size in bytes, or `-1` if the size cannot be read. |
+| `copy(source: string, destination: string)` | `bool` | Copy a file, replacing an existing destination. Returns false if the copy fails. |
+| `exists(path: string)` | `bool` | Check whether the path exists. |
+| `remove(path: string)` | `bool` | Remove a file or an empty directory; reports failure as false. |
+| `create_dir(path: string)` | `bool` | Create a directory and any missing parent directories; reports failure as false. |
 
 `file_size` uses bytes, not characters. File operations can fail because of permissions, invalid paths, missing files, or other operating-system errors.
 
-For operations that return `Bool`, treat `false` as failure rather than assuming the filesystem was changed. `write_text` overwrites the destination contents; `copy` may replace an existing destination. Avoid using destructive operations on paths you have not validated.
+For operations that return `bool`, treat `false` as failure rather than assuming the filesystem was changed. `write_text` overwrites the destination contents; `copy` may replace an existing destination. Avoid using destructive operations on paths you have not validated.
 
 ## `std.env` — process environment
 
@@ -154,10 +154,10 @@ Import with `import std.env;`.
 
 | Function | Return | Behavior |
 | --- | --- | --- |
-| `get(name: String)` | `String` | Read an environment variable; returns `""` if it is missing. |
-| `has(name: String)` | `Bool` | Test whether the variable exists, including when its value is empty. |
-| `set(name: String, value: String)` | `Bool` | Set an environment variable for the current process. |
-| `current_dir()` | `String` | Return the current working directory, or an empty string if it cannot be obtained. |
+| `get(name: string)` | `string` | Read an environment variable; returns `""` if it is missing. |
+| `has(name: string)` | `bool` | Test whether the variable exists, including when its value is empty. |
+| `set(name: string, value: string)` | `bool` | Set an environment variable for the current process. |
+| `current_dir()` | `string` | Return the current working directory, or an empty string if it cannot be obtained. |
 
 Use `has` together with `get` when a missing variable must be distinguished from a variable set to an empty string. Environment changes affect the running process and are not a way to modify the parent shell's environment.
 
@@ -168,12 +168,12 @@ Import with `import std.args;`. Arguments are captured from the running executab
 | Function | Behavior |
 | --- | --- |
 | `count()` | Number of raw arguments, including options and positional values. |
-| `get(index: Int)` | Return the raw argument at an index, or `""` when out of range. |
+| `get(index: int)` | Return the raw argument at an index, or `""` when out of range. |
 | `positional_count()` | Count positional arguments, skipping option-like arguments and their following values. `--` ends option parsing. |
-| `positional(index: Int)` | Return a positional argument by zero-based index, or `""` when out of range. |
-| `has_flag(name: String)` | Check for an exact flag token such as `--verbose` or `-v`. |
-| `has_option(name: String)` | Check for an option such as `--output file` or `--output=file`. |
-| `option(name: String, fallback: String)` | Read an option value in either form, returning the fallback when absent. |
+| `positional(index: int)` | Return a positional argument by zero-based index, or `""` when out of range. |
+| `has_flag(name: string)` | Check for an exact flag token such as `--verbose` or `-v`. |
+| `has_option(name: string)` | Check for an option such as `--output file` or `--output=file`. |
+| `option(name: string, fallback: string)` | Read an option value in either form, returning the fallback when absent. |
 
 Pass the option spelling you expect (for example, `"--output"`). Call `option()` before querying positionals so the parser knows which options consume a following value. This is a lightweight parser: it does not validate unknown options, define a schema, or generate help text. For option values beginning with `-`, prefer the `--name=value` form.
 
@@ -183,12 +183,12 @@ Import with `import std.path;`. These functions inspect or combine path strings;
 
 | Function | Behavior |
 | --- | --- |
-| `join(left: String, right: String)` | Join two path components using the host platform's path rules. |
-| `basename(value: String)` | Return the final path component. |
-| `dirname(value: String)` | Return the parent path component. |
-| `extension(value: String)` | Return the final extension without the dot (for `archive.tar.gz`, returns `gz`). |
-| `stem(value: String)` | Return the final component without its final extension (for `archive.tar.gz`, returns `archive.tar`). |
-| `is_absolute(value: String)` | Check whether the path is absolute according to the host platform. |
+| `join(left: string, right: string)` | Join two path components using the host platform's path rules. |
+| `basename(value: string)` | Return the final path component. |
+| `dirname(value: string)` | Return the parent path component. |
+| `extension(value: string)` | Return the final extension without the dot (for `archive.tar.gz`, returns `gz`). |
+| `stem(value: string)` | Return the final component without its final extension (for `archive.tar.gz`, returns `archive.tar`). |
+| `is_absolute(value: string)` | Check whether the path is absolute according to the host platform. |
 
 Path parsing and joining follow `std::filesystem` semantics, so separator and absolute-path behavior can differ between operating systems.
 
@@ -198,16 +198,16 @@ Import with `import std.json;`.
 
 | Function | Behavior and limitations |
 | --- | --- |
-| `is_valid(text: String)` | Validate a JSON value, including nested arrays and objects, strings, numbers, booleans, and `null`. |
-| `escape(text: String)` | Escape string contents for use inside a JSON string; it does not add surrounding quotes. |
-| `quote(text: String)` | Escape a string and add JSON double quotes. |
-| `has_key(text: String, key: String)` | Check for a key in a top-level JSON object. |
-| `is_null(text: String, key: String)` | Check whether a present top-level property has the JSON value `null`; a missing key is false. |
-| `get_string(text: String, key: String, fallback: String)` | Read a top-level string property or return the fallback. |
-| `get_int(text: String, key: String, fallback: Int)` | Read a top-level integer property or return the fallback. |
-| `get_bool(text: String, key: String, fallback: Bool)` | Read a top-level boolean property or return the fallback. |
+| `is_valid(text: string)` | Validate a JSON value, including nested arrays and objects, strings, numbers, booleans, and `null`. |
+| `escape(text: string)` | Escape string contents for use inside a JSON string; it does not add surrounding quotes. |
+| `quote(text: string)` | Escape a string and add JSON double quotes. |
+| `has_key(text: string, key: string)` | Check for a key in a top-level JSON object. |
+| `is_null(text: string, key: string)` | Check whether a present top-level property has the JSON value `null`; a missing key is false. |
+| `get_string(text: string, key: string, fallback: string)` | Read a top-level string property or return the fallback. |
+| `get_int(text: string, key: string, fallback: int)` | Read a top-level integer property or return the fallback. |
+| `get_bool(text: string, key: string, fallback: bool)` | Read a top-level boolean property or return the fallback. |
 
-These typed accessors read top-level object properties; they do not expose a dynamic JSON value/map/list type or recursively navigate nested objects. String access decodes JSON escapes, including Unicode escapes and surrogate pairs. `has_key` distinguishes a present `null` from a missing property; use `is_null` to check the value itself.
+These typed accessors read top-level object properties; they do not expose a dynamic JSON value/map/list type or recursively navigate nested objects. string access decodes JSON escapes, including Unicode escapes and surrogate pairs. `has_key` distinguishes a present `null` from a missing property; use `is_null` to check the value itself.
 
 The helpers are intended for small configuration payloads and straightforward lookups. If a key is nested, or if you need to preserve arbitrary JSON values and types, these accessors are not enough by themselves. `quote` is useful when constructing a JSON string literal; `escape` only escapes the contents and does not add quotes.
 
@@ -217,11 +217,11 @@ Import with `import std.toml;`.
 
 | Function | Behavior and limitations |
 | --- | --- |
-| `is_valid(text: String)` | Validate the runtime's limited TOML subset. This is not a TOML 1.0 conformance check. |
-| `has_key(text: String, key: String)` | Check for a supported scalar key; section keys use dotted names such as `server.port`. |
-| `get_string(text: String, key: String, fallback: String)` | Read a supported quoted string or return the fallback. |
-| `get_int(text: String, key: String, fallback: Int)` | Read a supported integer or return the fallback. |
-| `get_bool(text: String, key: String, fallback: Bool)` | Read a boolean or return the fallback. |
+| `is_valid(text: string)` | Validate the runtime's limited TOML subset. This is not a TOML 1.0 conformance check. |
+| `has_key(text: string, key: string)` | Check for a supported scalar key; section keys use dotted names such as `server.port`. |
+| `get_string(text: string, key: string, fallback: string)` | Read a supported quoted string or return the fallback. |
+| `get_int(text: string, key: string, fallback: int)` | Read a supported integer or return the fallback. |
+| `get_bool(text: string, key: string, fallback: bool)` | Read a boolean or return the fallback. |
 
 This is not a complete TOML 1.0 parser. Simple table sections, quote-aware comments, double-quoted strings, and basic single-quoted literal strings are supported. Arrays (including arrays of tables), multiline strings, dates, and other grammar edge cases are not supported by the subset validator. Cross-target behavior should be tested for the exact TOML syntax an application needs.
 
@@ -233,14 +233,14 @@ Import with `import std.http;`.
 
 | Function | Behavior and limitations |
 | --- | --- |
-| `is_url(url: String)` | Check basic HTTP(S) URL syntax, including a non-empty host and a valid numeric port when supplied. User-info URLs are rejected. |
-| `get(url: String)` | Return the response body for a successful GET request. |
-| `post_json(url: String, body: String)` | POST a body with `Content-Type: application/json` and return the response body. |
-| `response(url: String)` | Perform one GET and return a JSON object with `status`, `body`, `success`, and `error`. |
-| `post_json_response(url: String, body: String)` | Perform one JSON POST and return the same response-object shape. |
-| `status(url: String)` | Return the GET status code, or `0` when no HTTP response was obtained. This issues a separate request. |
-| `is_success(url: String)` | Return whether a separate GET received a 2xx status. |
-| `error(url: String)` | Return the error for a separate GET; empty means no reported error. |
+| `is_url(url: string)` | Check basic HTTP(S) URL syntax, including a non-empty host and a valid numeric port when supplied. User-info URLs are rejected. |
+| `get(url: string)` | Return the response body for a successful GET request. |
+| `post_json(url: string, body: string)` | POST a body with `Content-Type: application/json` and return the response body. |
+| `response(url: string)` | Perform one GET and return a JSON object with `status`, `body`, `success`, and `error`. |
+| `post_json_response(url: string, body: string)` | Perform one JSON POST and return the same response-object shape. |
+| `status(url: string)` | Return the GET status code, or `0` when no HTTP response was obtained. This issues a separate request. |
+| `is_success(url: string)` | Return whether a separate GET received a 2xx status. |
+| `error(url: string)` | Return the error for a separate GET; empty means no reported error. |
 
 For native builds, no `curl` executable is spawned: Windows uses WinHTTP, macOS uses CFNetwork, and other Unix-like builds use OpenSSL 1.1.0+ for TLS with native sockets for transport. The Unix socket implementation supports bracketed IPv6 authorities, preserves an explicit port in the `Host` header, removes URL fragments from the request target, and decodes `Transfer-Encoding: chunked` bodies. It does not expose response headers or chunk trailers, does not decode other transfer codings, and does not follow redirects; redirect behavior on other native platforms is transport-specific. The OpenSSL development headers and libraries must be installed when compiling an HTTP-using program on those Unix-like systems. For JavaScript output, the synchronous HTTP helpers use the `curl` executable, which must be installed and available on `PATH`. The body-only `get` and `post_json` helpers return an empty string on failure or non-2xx status, so they cannot distinguish those cases from a successful empty body. Prefer `response` or `post_json_response` when status and error information matters. The response functions return JSON text rather than a typed response structure; use `std.json` accessors to inspect its top-level `status`, `body`, `success`, and `error` fields. The separate `status`/`is_success`/`error` helpers each perform their own GET request and should not be used when one consistent response is required.
 
@@ -276,7 +276,7 @@ Runnable example: `examples/db_demo.aco`.
 | --- | --- | --- |
 | Print output | `std.io` (automatic) | Small set of printable value types |
 | Integer math and predicates | `std.math`, `std.validation`, `std.stats` | Integer-focused; averages discard fractional parts |
-| String composition | `std.string` | Basic helpers; `+` also concatenates strings |
+| string composition | `std.string` | Basic helpers; `+` also concatenates strings |
 | File and directory operations | `std.fs` | Some failures use `false`, `-1`, or `""` sentinels |
 | Environment variables and current directory | `std.env` | Changes affect only the running process |
 | Command-line options and positional arguments | `std.args` | Lightweight parser; no schema validation or generated help |
@@ -298,7 +298,7 @@ Import with `import std.timing;`.
 | Function | Behavior |
 | --- | --- |
 | `unix_seconds()` | Current Unix timestamp in whole seconds. |
-| `sleep_ms(milliseconds: Int)` | Pause the current thread for the requested number of milliseconds; non-positive values do nothing. |
+| `sleep_ms(milliseconds: int)` | Pause the current thread for the requested number of milliseconds; non-positive values do nothing. |
 
 ## `std.state` — checked state machines
 
@@ -362,7 +362,7 @@ import std.math;
 import std.string;
 import std.fs;
 
-fn main() {
+function main() {
     println(math.clamp(12, 0, 10));
     println(string.repeat_string("ha", 3));
 

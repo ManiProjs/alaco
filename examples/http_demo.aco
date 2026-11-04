@@ -1,7 +1,7 @@
 import std.http;
 import std.json;
 
-fn main() {
+function main() {
     let url = "https://example.com/";
 
     println("URL accepted:");

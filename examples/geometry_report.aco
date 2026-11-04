@@ -2,7 +2,7 @@ import std.geometry;
 import std.stats;
 import std.units;
 
-fn main() {
+function main() {
     let width = 12;
     let height = 7;
     let area = geometry.rectangle_area(width, height);

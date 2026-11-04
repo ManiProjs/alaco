@@ -5,9 +5,9 @@ Alaco is a small, statically checked language that compiles through generated C+
 ## A first program
 
 ```alaco
-fn main() {
+function main() {
     let language = "Alaco";
-    println("Hello from " + language + "!");
+    println("Hello from " + language + "!")
 }
 ```
 
@@ -15,7 +15,7 @@ fn main() {
 
 ## Source files and basic syntax
 
-Alaco source files use `.aco`. Statements such as variable declarations, assignments, function calls, and `return` normally end with a semicolon; the parser also accepts omitted semicolons in several statement positions. Blocks are delimited by `{` and `}`. Identifiers are used for variables, functions, types, and module names. Comments use `//` for the remainder of a line.
+Alaco source files use `.aco`. Newlines end statements, so semicolons are unnecessary (and accepted only as optional separators for compatibility). Blocks use `{` and `}`. Comments use `//` for the remainder of a line.
 
 The compiler is statically checked: it analyzes types and names before generating C++. A program can therefore fail during parsing, semantic analysis, C++ compilation, or execution. A successful `alaco check` means the Alaco front end accepted the program; it does not build the native executable.
 
@@ -25,19 +25,19 @@ The built-in types include:
 
 | Type | Meaning | Example |
 | --- | --- | --- |
-| `Int` | Integer | `let count: Int = 3;` |
-| `Float` | Floating-point number | `let temperature: Float = 21.5;` |
-| `Bool` | `true` or `false` | `let ready: Bool = true;` |
-| `String` | Text | `let title: String = "Hello";` |
+| `int` | Integer | `let count: int = 3;` |
+| `float` | Floating-point number | `let temperature: float = 21.5;` |
+| `bool` | `true` or `false` | `let ready: bool = true;` |
+| `string` | Text | `let title: string = "Hello";` |
 
-Type annotations can be omitted when the compiler can infer a variable's type. Use `let mut` for a variable that will be reassigned:
+Type annotations can be omitted when the compiler can infer a variable's type. Use `var` when a binding must be reassigned; `let` bindings are immutable:
 
 ```alaco
-let mut total: Int = 0;
+var total: int = 0;
 total = total + 1;
 ```
 
-An ordinary `let` binding is immutable and cannot be reassigned. Annotate a binding when you want to make the intended type explicit or inference needs help. Alaco does not implicitly convert unrelated types; integer values may be widened to `Float` in compatible numeric contexts.
+Annotate a binding when you want to make the intended type explicit or inference needs help. Alaco does not implicitly convert unrelated types; integer values may be widened to `float` in compatible numeric contexts. Lowercase primitive type names (`int`, `float`, `bool`, `string`, `void`) are canonical; their capitalized spellings remain accepted for older code.
 
 ### Composite types
 
@@ -45,21 +45,21 @@ Type annotations support nested parameterized types, heterogeneous tuples, and c
 
 ```alaco
 struct AccountSummary {
-    recent_ids: Array<Int>,
-    labels: Map<String, String>,
-    unique_tags: Set<String>,
-    selected_id: Option<Int>,
-    lookup_result: Result<String, Int>,
-    position: (Float, Float),
-    predicate: fn(Int, String) -> Bool,
+    recent_ids: Array<int>,
+    labels: Map<string, string>,
+    unique_tags: Set<string>,
+    selected_id: Option<int>,
+    lookup_result: Result<string, int>,
+    position: (float, float),
+    predicate: fn(int, string) -> bool,
 }
 
-fn process_ids(ids: Array<Option<Int>>) {
+function process_ids(ids: Array<Option<int>>) {
     // Work with ids here.
 }
 ```
 
-The currently recognized type constructors are `Array<T>`, `Set<T>`, `Map<K, V>`, `Option<T>`, and `Result<T, E>`. The compiler checks constructor names, argument counts, nested types, and rejects `Void` in value positions. Tuple types use `(T, U, ...)` and require at least two elements. Function types use `fn(ArgumentType, ...) -> ReturnType`; values with a function type can be called, with argument count and argument types checked at compile time. The native backend represents these types using C++ standard-library containers, `std::optional`, `std::variant`, `std::tuple`, and `std::function`.
+The currently recognized type constructors are `Array<T>`, `Set<T>`, `Map<K, V>`, `Option<T>`, and `Result<T, E>`. The compiler checks constructor names, argument counts, nested types, and rejects `void` in value positions. Tuple types use `(T, U, ...)` and require at least two elements. Function types use `fn(ArgumentType, ...) -> ReturnType`; values with a function type can be called, with argument count and argument types checked at compile time. The native backend represents these types using C++ standard-library containers, `std::optional`, `std::variant`, `std::tuple`, and `std::function`.
 
 These constructors currently provide type annotations and native layout. Alaco does not yet provide generic function or generic struct declarations, collection literals and operations, `Option`/`Result` constructors and pattern matching, or trait declarations. Enums and exhaustive matching are supported for named, payload-free variants; payload-bearing variants and generic declarations remain future work.
 
@@ -75,7 +75,7 @@ enum Direction {
     West,
 }
 
-fn direction_name(direction: Direction) -> String {
+function direction_name(direction: Direction): string {
     match direction {
         Direction.North => { return "north"; }
         Direction.East => { return "east"; }
@@ -84,7 +84,7 @@ fn direction_name(direction: Direction) -> String {
     }
 }
 
-fn main() {
+function main() {
     println(direction_name(Direction.West));
 }
 ```
@@ -93,23 +93,23 @@ Every enum match must cover every variant, or include `_` as a fallback. Missing
 
 ## Functions
 
-Declare functions with `fn`, typed parameters, and an optional return type. Functions without a return type do not return a value.
+Declare functions with `function`, typed parameters, and an optional return type after a colon. Functions without a return type do not return a value. The older `fn` keyword and `->` return annotation remain accepted while existing projects migrate.
 
-Functions with a non-`Void` return type must return a value on every statically recognized path. The analyzer recognizes direct returns and `if`/`else` branches that both return; it does not assume that a loop will run or terminate.
+Functions with a non-`void` return type must return a value on every statically recognized path. The analyzer recognizes direct returns and `if`/`else` branches that both return; it does not assume that a loop will run or terminate.
 
 ```alaco
-fn add(left: Int, right: Int) -> Int {
-    return left + right;
+function add(left: int, right: int): int {
+    return left + right
 }
 
-fn main() {
-    println(add(20, 22));
+function main() {
+    println(add(20, 22))
 }
 ```
 
 ## Conditions and operators
 
-`if` supports an optional `else` block. Conditions use `Bool` expressions:
+`if` supports an optional `else` block. Conditions use `bool` expressions:
 
 ```alaco
 if score >= 10 {
@@ -119,17 +119,17 @@ if score >= 10 {
 }
 ```
 
-The implemented binary operators include arithmetic (`+`, `-`, `*`, `/`, `%`), comparisons (`==`, `!=`, `<`, `<=`, `>`, `>=`), logical `and` / `or`, and compound assignments (`+=`, `-=`, `*=`, `/=`). `+=` accepts either compatible numeric operands or two `String` values, matching the behavior of `+`. Logical operators require `Bool` operands; `and` binds more tightly than `or`. The unary `!` operator negates a boolean, and unary `-` negates a number. Parentheses can group expressions.
+The implemented binary operators include arithmetic (`+`, `-`, `*`, `/`, `%`), comparisons (`==`, `!=`, `<`, `<=`, `>`, `>=`), logical `and` / `or`, and compound assignments (`+=`, `-=`, `*=`, `/=`). `+=` accepts either compatible numeric operands or two `string` values, matching the behavior of `+`. Logical operators require `bool` operands; `and` binds more tightly than `or`. The unary `!` operator negates a boolean, and unary `-` negates a number. Parentheses can group expressions.
 
-Equality is defined for `Int`, `Float`, `Bool`, and `String`; comparing structs, shell values, or `Void` is rejected. `%` currently requires two `Int` operands.
+Equality is defined for `int`, `float`, `bool`, and `string`; comparing structs, shell values, or `void` is rejected. `%` currently requires two `int` operands.
 
 ### Reactive derived values
 
 Use `derive` when a local value should stay synchronized with other variables:
 
 ```alaco
-let mut price = 100;
-let mut quantity = 3;
+var price = 100;
+var quantity = 3;
 derive total = price * quantity;
 derive discount_available = total >= 250;
 
@@ -143,10 +143,10 @@ Alaco records the identifiers used by each derived expression and inserts update
 
 ### Remembering values and reacting with `when`
 
-`previous name` reads the value of a local variable immediately before its most recent assignment. Its initial previous value is the value established by the variable's declaration (or the function argument's initial value). It currently supports `Int`, `Float`, `Bool`, and `String` locals/parameters.
+`previous name` reads the value of a local variable immediately before its most recent assignment. Its initial previous value is the value established by the variable's declaration (or the function argument's initial value). It currently supports `int`, `float`, `bool`, and `string` locals/parameters.
 
 ```alaco
-let mut score = 0;
+var score = 0;
 when score != previous score {
     println("Score changed: ${score}");
 }
@@ -162,27 +162,27 @@ Give a local variable a deadline with `for` between its name and optional type:
 
 ```alaco
 let cache for 20 seconds = "temporary";
-let mut session for 1 minute: String = "active";
+var session for 1 minute: string = "active";
 ```
 
-Supported units are `ms`/`milliseconds`, `s`/`seconds`, and `m`/`minutes`. When the deadline arrives, Alaco clears the stored value automatically. Reading, assigning, or using `previous` after expiry raises a runtime error instead of silently recreating the value. Timed variables currently support `Int`, `Float`, `Bool`, and `String`. The deadline is fixed at declaration; reassignment does not renew it. The compiler uses a small timer thread per timed variable, so use this for short-lived values rather than thousands of tiny-lived locals.
+Supported units are `ms`/`milliseconds`, `s`/`seconds`, and `m`/`minutes`. When the deadline arrives, Alaco clears the stored value automatically. Reading, assigning, or using `previous` after expiry raises a runtime error instead of silently recreating the value. Timed variables currently support `int`, `float`, `bool`, and `string`. The deadline is fixed at declaration; reassignment does not renew it. The compiler uses a small timer thread per timed variable, so use this for short-lived values rather than thousands of tiny-lived locals.
 
-Use `==` and `!=` for equality; a condition must evaluate to `Bool`, so numeric values are not implicitly treated as true or false. `+` adds compatible numeric values and concatenates strings. When in doubt, keep expressions simple and use parentheses to make grouping clear.
+Use `==` and `!=` for equality; a condition must evaluate to `bool`, so numeric values are not implicitly treated as true or false. `+` adds compatible numeric values and concatenates strings. When in doubt, keep expressions simple and use parentheses to make grouping clear.
 
 ### Pipe expressions
 
 The forward pipe operator `|>` passes its left-hand value as the first argument to a function on the right. Any arguments already written in a call follow the piped value. Pipes associate from left to right:
 
 ```alaco
-fn double(value: Int) -> Int {
+function double(value: int): int {
     return value * 2;
 }
 
-fn add(left: Int, right: Int) -> Int {
+function add(left: int, right: int): int {
     return left + right;
 }
 
-fn main() {
+function main() {
     let result = 4 |> double |> add(3);
     println(result); // 11
 }
@@ -218,11 +218,11 @@ Structs group named, typed fields. Field access uses dot notation.
 
 ```alaco
 struct User {
-    name: String,
-    age: Int,
+    name: string,
+    age: int,
 }
 
-fn main() {
+function main() {
     let user = User {
         name: "Ada",
         age: 36,
@@ -249,7 +249,7 @@ To call a specific function without the module prefix, use a named import:
 ```alaco
 import hello from helpers;
 
-fn main() {
+function main() {
     println(hello("Alaco"));
 }
 ```
@@ -262,7 +262,7 @@ import helpers;
 import helpers.greetings;
 import helpers.math_tools as maths;
 
-fn main() {
+function main() {
     println(math.clamp(12, 0, 10));
     println(greetings.hello("Alaco"));
     println(maths.square(9));
@@ -295,7 +295,7 @@ Local imports are resolved relative to the source file containing the import, no
 Insert a variable into a string with `${name}` syntax. Literal text and variable values are combined at runtime:
 
 ```alaco
-fn main() {
+function main() {
     let name = "Alaco";
     let version = 2026;
     println("Hello, ${name}! Welcome to Alaco ${version}.");
@@ -307,7 +307,7 @@ Interpolation currently supports variable names (including numeric and boolean v
 Interpolation is useful when a message combines fixed text with a value. For a calculation, compute the result first and interpolate the resulting variable:
 
 ```alaco
-fn main() {
+function main() {
     let subtotal = 18;
     let quantity = 3;
     let total = subtotal * quantity;
@@ -326,7 +326,7 @@ Use `alaco new my_app` to create a project scaffold, or `alaco init` to initiali
 Alaco supports a shell block expression. It runs the block as a command and returns a `ShellResult` value, which can be printed:
 
 ```alaco
-fn main() {
+function main() {
     let result = shell {
         echo "Hello from a command"
     };

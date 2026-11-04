@@ -1,14 +1,14 @@
 // JSON text utilities. Values remain strongly typed Alaco values; these
 // helpers validate JSON documents and safely escape string contents.
-fn is_valid(text: String) -> Bool {
+function is_valid(text: string): bool {
     return __builtin_json_is_valid(text);
 }
 
-fn escape(text: String) -> String {
+function escape(text: string): string {
     return __builtin_json_escape(text);
 }
 
-fn quote(text: String) -> String {
+function quote(text: string): string {
     // Call the intrinsic directly so JavaScript output does not accidentally
     // resolve the unqualified `escape` name to Node's legacy global function.
     return "\"" + __builtin_json_escape(text) + "\"";
@@ -16,23 +16,23 @@ fn quote(text: String) -> String {
 
 // Top-level object accessors return the supplied fallback when the key is
 // missing or has a different JSON type.
-fn has_key(text: String, key: String) -> Bool {
+function has_key(text: string, key: string): bool {
     return __builtin_json_has_key(text, key);
 }
 
 // True only when the key exists and its JSON value is null.
-fn is_null(text: String, key: String) -> Bool {
+function is_null(text: string, key: string): bool {
     return __builtin_json_is_null(text, key);
 }
 
-fn get_string(text: String, key: String, fallback: String) -> String {
+function get_string(text: string, key: string, fallback: string): string {
     return __builtin_json_get_string(text, key, fallback);
 }
 
-fn get_int(text: String, key: String, fallback: Int) -> Int {
+function get_int(text: string, key: string, fallback: int): int {
     return __builtin_json_get_int(text, key, fallback);
 }
 
-fn get_bool(text: String, key: String, fallback: Bool) -> Bool {
+function get_bool(text: string, key: string, fallback: bool): bool {
     return __builtin_json_get_bool(text, key, fallback);
 }

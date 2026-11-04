@@ -1,16 +1,16 @@
 struct ServerConfig {
-    port: Int,
-    tls_enabled: Bool,
+    port: int,
+    tls_enabled: bool,
 }
 
-fn effective_port(config: ServerConfig) -> Int {
+function effective_port(config: ServerConfig): int {
     if config.tls_enabled {
         return 443;
     }
     return config.port;
 }
 
-fn main() {
+function main() {
     let config = ServerConfig {
         port: 8080,
         tls_enabled: true,

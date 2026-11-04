@@ -1,12 +1,12 @@
-fn double(value: Int) -> Int {
+function double(value: int): int {
     return value * 2
 }
 
-fn add(a: Int, b: Int) -> Int {
+function add(a: int, b: int): int {
     return a + b
 }
 
-fn main() {
+function main() {
     let a = double(10)
     let b = add(a, 5)
 

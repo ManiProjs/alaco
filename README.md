@@ -13,7 +13,7 @@ cargo build
 Create `hello.aco`:
 
 ```alaco
-fn main() {
+function main() {
     println("Hello, Alaco!");
 }
 ```
@@ -111,7 +111,7 @@ Put test programs in `tests/` with one `.aco` file per test. Each file is compil
 import std.math;
 import std.string;
 
-fn main() {
+function main() {
     println(math.clamp(math.abs(-12), 0, 10));
     println(string.concat("Ala", "co"));
     println(string.repeat_string("ha", 3));

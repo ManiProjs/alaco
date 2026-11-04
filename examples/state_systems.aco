@@ -4,7 +4,7 @@ import std.workflow;
 import std.schema;
 import std.json;
 
-fn upgrade_account(document: String) -> String {
+function upgrade_account(document: string): string {
     let old_version = schema.version(document);
     if old_version == 1 {
         let old_payload = schema.payload(document);
@@ -15,7 +15,7 @@ fn upgrade_account(document: String) -> String {
     return document;
 }
 
-fn main() {
+function main() {
     // Define a transition graph, then create and advance a machine instance.
     state.allow("download", "idle", "connecting");
     state.allow("download", "connecting", "complete");

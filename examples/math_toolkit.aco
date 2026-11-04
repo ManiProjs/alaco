@@ -2,7 +2,7 @@ import std.math;
 import std.stats;
 import std.validation;
 
-fn main() {
+function main() {
     let number = 28;
     println("Number: ${number}");
     let prime = math.is_prime(number);

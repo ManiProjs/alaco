@@ -1,4 +1,4 @@
-fn main() {
+function main() {
     loop (repeat 5) {
         println("Hello, world!");
     }

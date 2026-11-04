@@ -5,7 +5,7 @@ enum Direction {
     West,
 }
 
-fn direction_name(direction: Direction) -> String {
+function direction_name(direction: Direction): string {
     match direction {
         Direction.North => { return "north"; }
         Direction.East => { return "east"; }
@@ -14,7 +14,7 @@ fn direction_name(direction: Direction) -> String {
     }
 }
 
-fn main() {
+function main() {
     let heading = Direction.West;
     println("Heading: " + direction_name(heading));
 }

@@ -2,7 +2,7 @@ import std.fs;
 import std.env;
 import std.path;
 
-fn verify_runtime() -> Bool {
+function verify_runtime(): bool {
     let file = "alaco-runtime-stdlib-test.txt";
 
     if fs.write_text(file, "runtime works") == false {
@@ -107,7 +107,7 @@ fn verify_runtime() -> Bool {
     return true;
 }
 
-fn main() {
+function main() {
     if verify_runtime() {
         println("Runtime standard library passed");
     } else {

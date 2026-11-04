@@ -5,7 +5,7 @@ import std.string;
 import std.units;
 import std.validation;
 
-fn main() {
+function main() {
     let rounded = math.round_up_to_multiple(17, 8);
     let divisible = math.is_multiple_of(42, 7);
     let greeting = string.prefix_suffix("Alaco", "Hello, ", "!");

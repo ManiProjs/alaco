@@ -1,5 +1,5 @@
 import hello from helpers;
 
-fn main() {
+function main() {
     println(hello("Alaco"));
 }

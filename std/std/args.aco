@@ -1,23 +1,23 @@
 // Command-line argument parsing. Indices are zero-based and exclude the
 // executable name. Options accept both `--name value` and `--name=value`.
-fn count() -> Int {
+function count(): int {
     return __builtin_args_count();
 }
 
-fn get(index: Int) -> String {
+function get(index: int): string {
     return __builtin_args_get(index);
 }
 
-fn positional_count() -> Int {
+function positional_count(): int {
     return __builtin_args_positional_count();
 }
 
-fn positional(index: Int) -> String {
+function positional(index: int): string {
     return __builtin_args_positional(index);
 }
 
-fn has_flag(name: String) -> Bool {
-    let mut index = 0;
+function has_flag(name: string): bool {
+    var index = 0;
     loop (while index < count()) {
         if get(index) == name {
             return true;
@@ -27,11 +27,11 @@ fn has_flag(name: String) -> Bool {
     return false;
 }
 
-fn has_option(name: String) -> Bool {
+function has_option(name: string): bool {
     return __builtin_args_has_option(name);
 }
 
-fn option(name: String, fallback: String) -> String {
+function option(name: string, fallback: string): string {
     __builtin_args_register_option(name);
     return __builtin_args_option(name, fallback);
 }

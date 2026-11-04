@@ -1,31 +1,31 @@
 // Filesystem helpers. Failed reads return an empty string; operations that
 // can fail return false so callers can handle errors explicitly.
-fn read_text(path: String) -> String {
+function read_text(path: string): string {
     return __builtin_fs_read_text(path);
 }
 
 // Returns the file size in bytes, or -1 when the size cannot be read.
-fn file_size(path: String) -> Int {
+function file_size(path: string): int {
     return __builtin_fs_file_size(path);
 }
 
 // Copies a file, replacing the destination if it already exists.
-fn copy(source: String, destination: String) -> Bool {
+function copy(source: string, destination: string): bool {
     return __builtin_fs_copy(source, destination);
 }
 
-fn write_text(path: String, contents: String) -> Bool {
+function write_text(path: string, contents: string): bool {
     return __builtin_fs_write_text(path, contents);
 }
 
-fn exists(path: String) -> Bool {
+function exists(path: string): bool {
     return __builtin_fs_exists(path);
 }
 
-fn remove(path: String) -> Bool {
+function remove(path: string): bool {
     return __builtin_fs_remove(path);
 }
 
-fn create_dir(path: String) -> Bool {
+function create_dir(path: string): bool {
     return __builtin_fs_create_dir(path);
 }

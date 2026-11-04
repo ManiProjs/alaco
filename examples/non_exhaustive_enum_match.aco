@@ -5,7 +5,7 @@ enum State {
     Failed,
 }
 
-fn main() {
+function main() {
     let state = State.Ready;
     match state {
         State.Ready => { println("ready"); }

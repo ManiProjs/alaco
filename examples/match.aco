@@ -1,4 +1,4 @@
-fn main() {
+function main() {
     let x = 3;
 
     match x {

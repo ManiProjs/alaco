@@ -1,46 +1,46 @@
-fn is_non_empty(value: String) -> Bool {
+function is_non_empty(value: string): bool {
     return value != "";
 }
 
-fn is_in_range(value: Int, lower: Int, upper: Int) -> Bool {
+function is_in_range(value: int, lower: int, upper: int): bool {
     if value < lower {
         return false;
     }
     return value <= upper;
 }
 
-fn is_positive(value: Int) -> Bool {
+function is_positive(value: int): bool {
     return value > 0;
 }
 
-fn is_non_negative(value: Int) -> Bool {
+function is_non_negative(value: int): bool {
     return value >= 0;
 }
 
-fn is_negative(value: Int) -> Bool {
+function is_negative(value: int): bool {
     return value < 0;
 }
 
-fn is_zero(value: Int) -> Bool {
+function is_zero(value: int): bool {
     return value == 0;
 }
 
-fn is_non_zero(value: Int) -> Bool {
+function is_non_zero(value: int): bool {
     return value != 0;
 }
 
-fn is_valid_port(value: Int) -> Bool {
+function is_valid_port(value: int): bool {
     return value >= 1 and value <= 65535;
 }
 
-fn is_valid_percentage(value: Int) -> Bool {
+function is_valid_percentage(value: int): bool {
     return value >= 0 and value <= 100;
 }
 
-fn is_valid_year(value: Int) -> Bool {
+function is_valid_year(value: int): bool {
     return value >= 1 and value <= 9999;
 }
 
-fn is_valid_ipv4_octet(value: Int) -> Bool {
+function is_valid_ipv4_octet(value: int): bool {
     return value >= 0 and value <= 255;
 }

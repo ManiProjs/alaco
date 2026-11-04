@@ -1,7 +1,7 @@
 import helpers.greetings;
 import helpers.math_tools as maths;
 
-fn main() {
+function main() {
     println(greetings.hello("Alaco"));
     println(maths.square(9));
 }

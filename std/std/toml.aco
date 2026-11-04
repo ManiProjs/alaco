@@ -4,23 +4,23 @@
 // strings, dates, and array-of-tables are not supported. Keys in sections use
 // dotted names such as "server.port".
 // Accessors cover string, integer, and boolean scalar values.
-fn is_valid(text: String) -> Bool {
+function is_valid(text: string): bool {
     return __builtin_toml_is_valid(text);
 }
 
 // Top-level scalar keys only. Missing keys or type mismatches use fallback.
-fn has_key(text: String, key: String) -> Bool {
+function has_key(text: string, key: string): bool {
     return __builtin_toml_has_key(text, key);
 }
 
-fn get_string(text: String, key: String, fallback: String) -> String {
+function get_string(text: string, key: string, fallback: string): string {
     return __builtin_toml_get_string(text, key, fallback);
 }
 
-fn get_int(text: String, key: String, fallback: Int) -> Int {
+function get_int(text: string, key: string, fallback: int): int {
     return __builtin_toml_get_int(text, key, fallback);
 }
 
-fn get_bool(text: String, key: String, fallback: Bool) -> Bool {
+function get_bool(text: string, key: string, fallback: bool): bool {
     return __builtin_toml_get_bool(text, key, fallback);
 }

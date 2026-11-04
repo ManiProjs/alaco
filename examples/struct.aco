@@ -1,9 +1,9 @@
 struct User {
-    name: String,
-    age: Int,
+    name: string,
+    age: int,
 }
 
-fn main() {
+function main() {
     let user = User {
         name: "Mani",
         age: 13,

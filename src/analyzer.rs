@@ -139,7 +139,18 @@ impl<'a> Analyzer<'a> {
             if let Item::Struct(structure) = item {
                 if matches!(
                     structure.name.as_str(),
-                    "Int" | "Float" | "Bool" | "String" | "Shell" | "ShellResult" | "Void"
+                    "int"
+                        | "float"
+                        | "bool"
+                        | "string"
+                        | "void"
+                        | "Int"
+                        | "Float"
+                        | "Bool"
+                        | "String"
+                        | "Shell"
+                        | "ShellResult"
+                        | "Void"
                 ) {
                     return Err(self.error(
                         format!(
@@ -158,7 +169,18 @@ impl<'a> Analyzer<'a> {
             } else if let Item::Enum(enumeration) = item {
                 if matches!(
                     enumeration.name.as_str(),
-                    "Int" | "Float" | "Bool" | "String" | "Shell" | "ShellResult" | "Void"
+                    "int"
+                        | "float"
+                        | "bool"
+                        | "string"
+                        | "void"
+                        | "Int"
+                        | "Float"
+                        | "Bool"
+                        | "String"
+                        | "Shell"
+                        | "ShellResult"
+                        | "Void"
                 ) {
                     return Err(self.error(
                         format!(

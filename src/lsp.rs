@@ -355,14 +355,14 @@ impl Server {
             .collect::<String>();
         let mut entries = BTreeMap::<String, (u32, String)>::new();
         for (label, kind, detail) in [
-            ("fn", 14, "Declare a function"),
+            ("function", 14, "Declare a function"),
             ("struct", 14, "Declare a struct"),
             ("enum", 14, "Declare an enum"),
             ("import", 14, "Import a module"),
             ("from", 14, "Import selected symbols"),
             ("as", 14, "Import alias"),
             ("let", 14, "Declare an immutable binding"),
-            ("mut", 14, "Mutable binding modifier"),
+            ("var", 14, "Declare a mutable binding"),
             ("return", 14, "Return from a function"),
             ("if", 14, "Conditional"),
             ("else", 14, "Alternative branch"),
@@ -493,7 +493,9 @@ impl Server {
                 .map(|(start, end)| (*start, *end))
                 .collect::<HashSet<_>>();
             for (index, token) in tokens.iter().enumerate() {
-                if token.span.offset() >= offset || !matches!(token.kind, TokenKind::Let) {
+                if token.span.offset() >= offset
+                    || !matches!(token.kind, TokenKind::Let | TokenKind::Var)
+                {
                     continue;
                 }
                 let mut name_index = index + 1;
@@ -521,7 +523,7 @@ impl Server {
             }
             // Parameters are available anywhere in their function body.
             for (index, token) in tokens.iter().enumerate() {
-                if !matches!(token.kind, TokenKind::Fn) {
+                if !matches!(token.kind, TokenKind::Fn | TokenKind::Function) {
                     continue;
                 }
                 let Some(open) = (index + 2..tokens.len())
@@ -812,7 +814,11 @@ impl Server {
         let name = token.lexeme.trim();
         if let Some(indices) = local_symbol_occurrences(source, offset, name)
             && let Some(index) = indices.iter().copied().find(|&index| {
-                (index > 0 && matches!(tokens[index - 1].kind, TokenKind::Let | TokenKind::Mut))
+                (index > 0
+                    && matches!(
+                        tokens[index - 1].kind,
+                        TokenKind::Let | TokenKind::Var | TokenKind::Mut
+                    ))
                     || tokens
                         .get(index + 1)
                         .is_some_and(|next| matches!(next.kind, TokenKind::Colon))
@@ -853,7 +859,7 @@ impl Server {
                 .filter(|&index| {
                     include_decl
                         || !((index > 0
-                            && matches!(tokens[index - 1].kind, TokenKind::Let | TokenKind::Mut))
+                            && matches!(tokens[index - 1].kind, TokenKind::Let | TokenKind::Var | TokenKind::Mut))
                             || tokens.get(index + 1).is_some_and(|next| matches!(next.kind, TokenKind::Colon)))
                 })
                 .map(|index| {
@@ -1323,7 +1329,7 @@ impl Server {
             let TokenKind::Identifier(name) = &tokens[index].kind else {
                 continue;
             };
-            if index > 0 && matches!(tokens[index - 1].kind, TokenKind::Fn) {
+            if index > 0 && matches!(tokens[index - 1].kind, TokenKind::Fn | TokenKind::Function) {
                 continue;
             }
             let Some(parameters) = signatures.get(name) else {
@@ -1616,6 +1622,7 @@ fn is_declaration(tokens: &[Token], index: usize) -> bool {
         && matches!(
             tokens[index - 1].kind,
             TokenKind::Fn
+                | TokenKind::Function
                 | TokenKind::Struct
                 | TokenKind::Enum
                 | TokenKind::Let
@@ -1625,7 +1632,7 @@ fn is_declaration(tokens: &[Token], index: usize) -> bool {
     {
         return true;
     }
-    if index >= 2 && matches!(tokens[index - 2].kind, TokenKind::Fn) {
+    if index >= 2 && matches!(tokens[index - 2].kind, TokenKind::Fn | TokenKind::Function) {
         return true;
     }
     false
@@ -1684,15 +1691,16 @@ fn local_symbol_occurrences(source: &str, offset: usize, name: &str) -> Option<V
     };
     let mut bindings = Vec::<Binding>::new();
 
-    // `let name` and `let mut name` bind until the end of the containing block.
+    // `let name` and `var name` bind until the end of the containing block.
     for (index, token) in tokens.iter().enumerate() {
-        if !matches!(token.kind, TokenKind::Let) {
+        if !matches!(token.kind, TokenKind::Let | TokenKind::Var) {
             continue;
         }
         let mut name_index = index + 1;
-        if tokens
-            .get(name_index)
-            .is_some_and(|t| matches!(t.kind, TokenKind::Mut))
+        if matches!(token.kind, TokenKind::Let)
+            && tokens
+                .get(name_index)
+                .is_some_and(|t| matches!(t.kind, TokenKind::Mut))
         {
             name_index += 1;
         }
@@ -1712,7 +1720,7 @@ fn local_symbol_occurrences(source: &str, offset: usize, name: &str) -> Option<V
     // Parameters are visible throughout their function body. Locate the body
     // brace after each parameter list, then bind identifiers immediately before `:`.
     for (index, token) in tokens.iter().enumerate() {
-        if !matches!(token.kind, TokenKind::Fn)
+        if !matches!(token.kind, TokenKind::Fn | TokenKind::Function)
             || !tokens
                 .get(index + 1)
                 .is_some_and(|next| matches!(next.kind, TokenKind::Identifier(_)))
@@ -1848,7 +1856,9 @@ fn semantic_type(
         | TokenKind::From
         | TokenKind::As
         | TokenKind::Fn
+        | TokenKind::Function
         | TokenKind::Let
+        | TokenKind::Var
         | TokenKind::Mut
         | TokenKind::Return
         | TokenKind::Stop
@@ -1987,13 +1997,15 @@ fn symbols_for(program: &Program, source: &str) -> Value {
 
 fn keyword_help(name: &str) -> Option<&'static str> {
     Some(match name {
-        "fn" => "`fn name(params) -> Type { ... }` declares a function.",
+        "function" | "fn" => {
+            "`function name(params): type { ... }` declares a function. `fn` and `->` remain accepted for older code."
+        }
         "struct" => "`struct Name { field: Type }` declares a named record type.",
         "enum" => "`enum Name { First, Second }` declares a finite set of named variants.",
         "let" => {
-            "`let name = expression` declares an immutable binding. Use `let mut` for reassignment."
+            "`let name = expression` declares an immutable binding. Use `var name = expression` for reassignment."
         }
-        "mut" => "Marks a `let` binding as mutable: `let mut count = 0`.",
+        "var" => "Declares a mutable binding: `var count = 0`.",
         "return" => {
             "Returns from the current function. Value-returning functions must return on every path."
         }
@@ -2011,14 +2023,14 @@ fn keyword_help(name: &str) -> Option<&'static str> {
         "import" => "Imports a module, for example `import std.math;`.",
         "from" => "Imports selected symbols from a module.",
         "as" => "Assigns an alias to an import.",
-        "and" => "Boolean conjunction; both operands must be `Bool`.",
-        "or" => "Boolean disjunction; both operands must be `Bool`.",
-        "true" | "false" => "Boolean literal (`Bool`).",
-        "Int" => "Signed 64-bit integer type.",
-        "Float" => "Floating-point numeric type.",
-        "Bool" => "Boolean type with values `true` and `false`.",
-        "String" => "UTF-8 string type.",
-        "Void" => "Function result type for functions that do not return a value.",
+        "and" => "Boolean conjunction; both operands must be `bool`.",
+        "or" => "Boolean disjunction; both operands must be `bool`.",
+        "true" | "false" => "Boolean literal (`bool`).",
+        "int" | "Int" => "Signed 64-bit integer type.",
+        "float" | "Float" => "Floating-point numeric type.",
+        "bool" | "Bool" => "Boolean type with values `true` and `false`.",
+        "string" | "String" => "UTF-8 string type.",
+        "void" | "Void" => "Function result type for functions that do not return a value.",
         _ => return None,
     })
 }
@@ -2381,7 +2393,7 @@ mod tests {
 
     #[test]
     fn local_rename_respects_shadowed_bindings() {
-        let source = "fn main() { let value = 1; if true { let value = 2; println(value); } println(value); }";
+        let source = "function main() { var value = 1; if true { let value = 2; println(value); } println(value); }";
         let inner_use = source.find("println(value)").unwrap() + "println(".len();
         let inner = local_symbol_occurrences(source, inner_use, "value").unwrap();
         let tokens = lex(source).unwrap();
@@ -2390,7 +2402,7 @@ mod tests {
             .map(|&index| tokens[index].span.offset())
             .collect::<Vec<_>>();
         let inner_decl = source.find("let value = 2").unwrap() + "let ".len();
-        let outer_decl = source.find("let value = 1").unwrap() + "let ".len();
+        let outer_decl = source.find("var value = 1").unwrap() + "var ".len();
         let outer_use = source.rfind("println(value)").unwrap() + "println(".len();
         assert!(offsets.contains(&inner_decl));
         assert!(offsets.contains(&inner_use));

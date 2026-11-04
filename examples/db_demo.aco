@@ -1,6 +1,6 @@
 import std.db;
 
-fn main() {
+function main() {
     let connection = db.open("alaco-demo.sqlite");
     if connection == 0 {
         println(db.error(0));

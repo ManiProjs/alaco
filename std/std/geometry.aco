@@ -1,31 +1,31 @@
-fn rectangle_area(width: Int, height: Int) -> Int {
+function rectangle_area(width: int, height: int): int {
     return width * height;
 }
 
-fn rectangle_perimeter(width: Int, height: Int) -> Int {
+function rectangle_perimeter(width: int, height: int): int {
     return 2 * (width + height);
 }
 
-fn squared_distance(x1: Int, y1: Int, x2: Int, y2: Int) -> Int {
+function squared_distance(x1: int, y1: int, x2: int, y2: int): int {
     let dx = x2 - x1;
     let dy = y2 - y1;
     return dx * dx + dy * dy;
 }
 
-fn absolute(value: Int) -> Int {
+function absolute(value: int): int {
     if value < 0 {
         return 0 - value;
     }
     return value;
 }
 
-fn manhattan_distance(x1: Int, y1: Int, x2: Int, y2: Int) -> Int {
+function manhattan_distance(x1: int, y1: int, x2: int, y2: int): int {
     let dx = x2 - x1;
     let dy = y2 - y1;
     return absolute(dx) + absolute(dy);
 }
 
-fn is_inside_rectangle(x: Int, y: Int, left: Int, top: Int, right: Int, bottom: Int) -> Bool {
+function is_inside_rectangle(x: int, y: int, left: int, top: int, right: int, bottom: int): bool {
     if x < left {
         return false;
     }
@@ -38,18 +38,18 @@ fn is_inside_rectangle(x: Int, y: Int, left: Int, top: Int, right: Int, bottom: 
     return y <= bottom;
 }
 
-fn rectangle_diagonal_squared(width: Int, height: Int) -> Int {
+function rectangle_diagonal_squared(width: int, height: int): int {
     return width * width + height * height;
 }
 
-fn triangle_area(base: Int, height: Int) -> Int {
+function triangle_area(base: int, height: int): int {
     return (base * height) / 2;
 }
 
-fn circle_area(radius: Float) -> Float {
+function circle_area(radius: float): float {
     return 3.141592653589793 * radius * radius;
 }
 
-fn circle_circumference(radius: Float) -> Float {
+function circle_circumference(radius: float): float {
     return 2.0 * 3.141592653589793 * radius;
 }

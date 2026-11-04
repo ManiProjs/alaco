@@ -1,4 +1,4 @@
-fn main() {
+function main() {
     let hello = shell {
         echo "hi"
     };

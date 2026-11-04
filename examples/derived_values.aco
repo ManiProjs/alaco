@@ -1,7 +1,7 @@
 // Derived values are recalculated when their source variables change.
-fn main() {
-    let mut price = 100;
-    let mut quantity = 3;
+function main() {
+    var price = 100;
+    var quantity = 3;
 
     derive total = price * quantity;
     derive discount_available = total >= 250;

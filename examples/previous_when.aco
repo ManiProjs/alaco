@@ -1,7 +1,7 @@
 // `previous` remembers the value before the most recent assignment.
 // `when` checks its condition after statements in this block.
-fn main() {
-    let mut score = 0;
+function main() {
+    var score = 0;
 
     when score != previous score {
         println("Score changed: ${score}");

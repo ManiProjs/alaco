@@ -1,4 +1,4 @@
-fn max(a: Int, b: Int) -> Int {
+function max(a: int, b: int): int {
     if a > b {
         return a;
     }
@@ -6,7 +6,7 @@ fn max(a: Int, b: Int) -> Int {
     return b;
 }
 
-fn min(a: Int, b: Int) -> Int {
+function min(a: int, b: int): int {
     if a < b {
         return a;
     }
@@ -14,7 +14,7 @@ fn min(a: Int, b: Int) -> Int {
     return b;
 }
 
-fn abs(value: Int) -> Int {
+function abs(value: int): int {
     if value < 0 {
         return 0 - value;
     }
@@ -22,11 +22,11 @@ fn abs(value: Int) -> Int {
     return value;
 }
 
-fn square(value: Int) -> Int {
+function square(value: int): int {
     return value * value;
 }
 
-fn clamp(value: Int, lower: Int, upper: Int) -> Int {
+function clamp(value: int, lower: int, upper: int): int {
     if value < lower {
         return lower;
     }
@@ -38,19 +38,19 @@ fn clamp(value: Int, lower: Int, upper: Int) -> Int {
     return value;
 }
 
-fn is_even(value: Int) -> Bool {
+function is_even(value: int): bool {
     return value % 2 == 0;
 }
 
-fn is_odd(value: Int) -> Bool {
+function is_odd(value: int): bool {
     return value % 2 != 0;
 }
 
-fn cube(value: Int) -> Int {
+function cube(value: int): int {
     return value * value * value;
 }
 
-fn sign(value: Int) -> Int {
+function sign(value: int): int {
     if value < 0 {
         return -1;
     }
@@ -60,7 +60,7 @@ fn sign(value: Int) -> Int {
     return 0;
 }
 
-fn in_range(value: Int, lower: Int, upper: Int) -> Bool {
+function in_range(value: int, lower: int, upper: int): bool {
     if value < lower {
         return false;
     }
@@ -68,9 +68,9 @@ fn in_range(value: Int, lower: Int, upper: Int) -> Bool {
 }
 
 // Greatest common divisor of two integers (Euclidean algorithm).
-fn gcd(left: Int, right: Int) -> Int {
-    let mut a = abs(left);
-    let mut b = abs(right);
+function gcd(left: int, right: int): int {
+    var a = abs(left);
+    var b = abs(right);
     loop (while b != 0) {
         let remainder = a % b;
         a = b;
@@ -80,9 +80,9 @@ fn gcd(left: Int, right: Int) -> Int {
 }
 
 // Integer exponentiation. Non-positive exponents return 1.
-fn pow_int(base: Int, exponent: Int) -> Int {
-    let mut result = 1;
-    let mut count = 0;
+function pow_int(base: int, exponent: int): int {
+    var result = 1;
+    var count = 0;
     loop (while count < exponent) {
         result = result * base;
         count = count + 1;
@@ -91,7 +91,7 @@ fn pow_int(base: Int, exponent: Int) -> Int {
 }
 
 // Least common multiple. Returns zero when either input is zero.
-fn lcm(left: Int, right: Int) -> Int {
+function lcm(left: int, right: int): int {
     if left == 0 {
         return 0;
     }
@@ -101,11 +101,11 @@ fn lcm(left: Int, right: Int) -> Int {
     return abs((left / gcd(left, right)) * right);
 }
 
-fn is_prime(value: Int) -> Bool {
+function is_prime(value: int): bool {
     if value < 2 {
         return false;
     }
-    let mut divisor = 2;
+    var divisor = 2;
     loop (while divisor <= value / divisor) {
         if value % divisor == 0 {
             return false;
@@ -117,12 +117,12 @@ fn is_prime(value: Int) -> Bool {
 
 // Factorial for 0..=20. Returns -1 for negative values or values that would
 // overflow a signed 64-bit integer.
-fn factorial(value: Int) -> Int {
+function factorial(value: int): int {
     if value < 0 or value > 20 {
         return -1;
     }
-    let mut result = 1;
-    let mut factor = 2;
+    var result = 1;
+    var factor = 2;
     loop (while factor <= value) {
         result = result * factor;
         factor = factor + 1;
@@ -131,7 +131,7 @@ fn factorial(value: Int) -> Int {
 }
 
 // Round integer division upward. Returns 0 for a zero divisor.
-fn ceil_div(value: Int, divisor: Int) -> Int {
+function ceil_div(value: int, divisor: int): int {
     if divisor == 0 {
         return 0;
     }
@@ -143,18 +143,18 @@ fn ceil_div(value: Int, divisor: Int) -> Int {
     return quotient;
 }
 
-fn triangular(value: Int) -> Int {
+function triangular(value: int): int {
     if value < 0 or value > 3037000499 {
         return -1;
     }
     return (value * (value + 1)) / 2;
 }
 
-fn is_power_of_two(value: Int) -> Bool {
+function is_power_of_two(value: int): bool {
     if value <= 0 {
         return false;
     }
-    let mut remaining = value;
+    var remaining = value;
     loop (while remaining % 2 == 0) {
         remaining = remaining / 2;
     }
@@ -162,7 +162,7 @@ fn is_power_of_two(value: Int) -> Bool {
 }
 
 // Return false for a zero divisor instead of evaluating remainder by zero.
-fn is_multiple_of(value: Int, divisor: Int) -> Bool {
+function is_multiple_of(value: int, divisor: int): bool {
     if divisor == 0 {
         return false;
     }
@@ -171,7 +171,7 @@ fn is_multiple_of(value: Int, divisor: Int) -> Bool {
 
 // Return the first multiple of `step` greater than or equal to `value`.
 // A non-positive step returns `value` unchanged.
-fn round_up_to_multiple(value: Int, step: Int) -> Int {
+function round_up_to_multiple(value: int, step: int): int {
     if step <= 0 {
         return value;
     }

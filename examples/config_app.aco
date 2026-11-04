@@ -3,7 +3,7 @@ import std.json;
 import std.toml;
 import std.validation;
 
-fn main() {
+function main() {
     let json_config = "{\"app\":\"Alaco\",\"port\":8080,\"debug\":true}";
     if json.is_valid(json_config) {
         let app_name = json.get_string(json_config, "app", "Unnamed");

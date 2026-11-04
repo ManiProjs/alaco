@@ -30,10 +30,12 @@ impl Parser {
                 items.push(Item::Struct(self.parse_struct()?));
             } else if self.check(&TokenKind::Enum) {
                 items.push(Item::Enum(self.parse_enum()?));
-            } else if self.check(&TokenKind::Fn) {
+            } else if self.check(&TokenKind::Fn) || self.check(&TokenKind::Function) {
                 items.push(Item::Function(self.parse_function()?));
             } else {
-                return Err(self.error("expected 'enum', 'struct', 'import', or 'fn' at top level"));
+                return Err(
+                    self.error("expected 'enum', 'struct', 'import', or 'function' at top level")
+                );
             }
 
             self.skip_newlines();
@@ -202,7 +204,9 @@ impl Parser {
 
     fn parse_function(&mut self) -> Result<Function, AlacoError> {
         let start = self.peek().span.offset();
-        self.consume(&TokenKind::Fn, "expected 'fn'")?;
+        if !self.matches(&TokenKind::Function) {
+            self.consume(&TokenKind::Fn, "expected 'function'")?;
+        }
 
         let name = self.consume_identifier("expected function name")?;
 
@@ -242,20 +246,21 @@ impl Parser {
 
         self.consume(&TokenKind::RightParen, "expected ')' after parameters")?;
 
-        let (return_type, return_type_span) = if self.matches(&TokenKind::Arrow) {
-            let type_start = self.peek().span.offset();
-            let ty = self.parse_type()?;
-            let type_end = self.previous().span.offset() + self.previous().span.len();
-            (
-                Some(ty),
-                Some(Span {
-                    start: type_start,
-                    end: type_end,
-                }),
-            )
-        } else {
-            (None, None)
-        };
+        let (return_type, return_type_span) =
+            if self.matches(&TokenKind::Colon) || self.matches(&TokenKind::Arrow) {
+                let type_start = self.peek().span.offset();
+                let ty = self.parse_type()?;
+                let type_end = self.previous().span.offset() + self.previous().span.len();
+                (
+                    Some(ty),
+                    Some(Span {
+                        start: type_start,
+                        end: type_end,
+                    }),
+                )
+            } else {
+                (None, None)
+            };
 
         self.skip_newlines();
 
@@ -380,7 +385,7 @@ impl Parser {
     fn parse_statement(&mut self) -> Result<Stmt, AlacoError> {
         let span = self.token_span(self.peek());
         match self.peek().kind.clone() {
-            TokenKind::Let => self.parse_let_statement(),
+            TokenKind::Let | TokenKind::Var => self.parse_let_statement(),
             TokenKind::Return => self.parse_return_statement(),
             TokenKind::Stop => self.parse_stop_statement(),
             TokenKind::Skip => {
@@ -401,11 +406,14 @@ impl Parser {
 
     fn parse_let_statement(&mut self) -> Result<Stmt, AlacoError> {
         let start = self.peek().span.offset();
-        self.consume(&TokenKind::Let, "expected 'let'")?;
+        let mutable = if self.matches(&TokenKind::Var) {
+            true
+        } else {
+            self.consume(&TokenKind::Let, "expected 'let' or 'var'")?;
+            self.matches(&TokenKind::Mut) // legacy spelling
+        };
 
-        let mutable = self.matches(&TokenKind::Mut);
-
-        let name = self.consume_identifier("expected variable name after 'let'")?;
+        let name = self.consume_identifier("expected variable name after 'let' or 'var'")?;
 
         let lifetime_ms = if self.matches(&TokenKind::For) {
             let amount = match self.advance().kind {

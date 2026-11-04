@@ -6,20 +6,20 @@ import std.json;
 // Body-only helpers return an empty string for transport failures and non-2xx
 // responses. response/post_json_response return JSON with status, body,
 // success, and error from one request. JSON POST sends application/json.
-fn is_url(url: String) -> Bool {
+function is_url(url: string): bool {
     return __builtin_http_is_url(url);
 }
 
 // Return JSON containing status, body, success, and error from one request.
-fn response(url: String) -> String {
+function response(url: string): string {
     return __builtin_http_response(url);
 }
 
-fn post_json_response(url: String, body: String) -> String {
+function post_json_response(url: string, body: string): string {
     return __builtin_http_post_response(url, body);
 }
 
-fn get(url: String) -> String {
+function get(url: string): string {
     let result = response(url);
     if json.get_bool(result, "success", false) {
         return json.get_string(result, "body", "");
@@ -27,7 +27,7 @@ fn get(url: String) -> String {
     return "";
 }
 
-fn post_json(url: String, body: String) -> String {
+function post_json(url: string, body: string): string {
     let result = post_json_response(url, body);
     if json.get_bool(result, "success", false) {
         return json.get_string(result, "body", "");
@@ -37,14 +37,14 @@ fn post_json(url: String, body: String) -> String {
 
 // These helpers issue their own GET request. A status of 0 means that the
 // request could not obtain an HTTP response; 2xx statuses indicate success.
-fn status(url: String) -> Int {
+function status(url: string): int {
     return json.get_int(response(url), "status", 0);
 }
 
-fn is_success(url: String) -> Bool {
+function is_success(url: string): bool {
     return json.get_bool(response(url), "success", false);
 }
 
-fn error(url: String) -> String {
+function error(url: string): string {
     return json.get_string(response(url), "error", "");
 }

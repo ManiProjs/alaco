@@ -118,7 +118,7 @@ pub enum AlacoError {
     #[error("cannot assign to immutable variable `{name}`")]
     #[diagnostic(
         code(alaco::analysis::immutable_assignment),
-        help("declare it using `let mut` if it needs to be changed")
+        help("declare it using `var` if it needs to be changed")
     )]
     ImmutableAssignment {
         name: String,
@@ -199,7 +199,10 @@ pub enum AlacoError {
     },
 
     #[error("program must contain a `main` function")]
-    #[diagnostic(code(alaco::analysis::missing_main), help("add `fn main() {{ ... }}`"))]
+    #[diagnostic(
+        code(alaco::analysis::missing_main),
+        help("add `function main() {{ ... }}`")
+    )]
     MissingMain,
 
     #[error("program can only contain one `main` function")]
@@ -334,7 +337,7 @@ impl AlacoError {
                     "`{name}` was declared as immutable, so it cannot be assigned a new value."
                 ),
                 format!(
-                    "If `{name}` needs to change, declare it with `let mut`."
+                    "If `{name}` needs to change, declare it with `var`."
                 ),
             )),
 
@@ -374,7 +377,7 @@ impl AlacoError {
 
             Self::MissingMain => Some((
                 "Every Alaco program needs an entry point named `main`.".into(),
-                "Add `fn main() { ... }` to the program.".into(),
+                "Add `function main() { ... }` to the program.".into(),
             )),
 
             Self::MultipleMain { .. } => Some((

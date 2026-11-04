@@ -1,75 +1,75 @@
-fn celsius_to_fahrenheit(value: Float) -> Float {
+function celsius_to_fahrenheit(value: float): float {
     return value * 1.8 + 32.0;
 }
 
-fn fahrenheit_to_celsius(value: Float) -> Float {
+function fahrenheit_to_celsius(value: float): float {
     return (value - 32.0) / 1.8;
 }
 
-fn kilometers_to_miles(value: Float) -> Float {
+function kilometers_to_miles(value: float): float {
     return value * 0.621371;
 }
 
-fn miles_to_kilometers(value: Float) -> Float {
+function miles_to_kilometers(value: float): float {
     return value / 0.621371;
 }
 
-fn kilograms_to_pounds(value: Float) -> Float {
+function kilograms_to_pounds(value: float): float {
     return value * 2.2046226218;
 }
 
-fn pounds_to_kilograms(value: Float) -> Float {
+function pounds_to_kilograms(value: float): float {
     return value / 2.2046226218;
 }
 
-fn meters_to_feet(value: Float) -> Float {
+function meters_to_feet(value: float): float {
     return value * 3.280839895;
 }
 
-fn feet_to_meters(value: Float) -> Float {
+function feet_to_meters(value: float): float {
     return value / 3.280839895;
 }
 
-fn liters_to_us_gallons(value: Float) -> Float {
+function liters_to_us_gallons(value: float): float {
     return value / 3.785411784;
 }
 
-fn us_gallons_to_liters(value: Float) -> Float {
+function us_gallons_to_liters(value: float): float {
     return value * 3.785411784;
 }
 
-fn meters_to_kilometers(value: Float) -> Float {
+function meters_to_kilometers(value: float): float {
     return value / 1000.0;
 }
 
-fn kilometers_to_meters(value: Float) -> Float {
+function kilometers_to_meters(value: float): float {
     return value * 1000.0;
 }
 
-fn centimeters_to_inches(value: Float) -> Float {
+function centimeters_to_inches(value: float): float {
     return value / 2.54;
 }
 
-fn inches_to_centimeters(value: Float) -> Float {
+function inches_to_centimeters(value: float): float {
     return value * 2.54;
 }
 
-fn seconds_to_minutes(value: Float) -> Float {
+function seconds_to_minutes(value: float): float {
     return value / 60.0;
 }
 
-fn minutes_to_seconds(value: Float) -> Float {
+function minutes_to_seconds(value: float): float {
     return value * 60.0;
 }
 
-fn hours_to_seconds(value: Float) -> Float {
+function hours_to_seconds(value: float): float {
     return value * 3600.0;
 }
 
-fn bytes_to_kibibytes(value: Int) -> Int {
+function bytes_to_kibibytes(value: int): int {
     return value / 1024;
 }
 
-fn kibibytes_to_bytes(value: Int) -> Int {
+function kibibytes_to_bytes(value: int): int {
     return value * 1024;
 }

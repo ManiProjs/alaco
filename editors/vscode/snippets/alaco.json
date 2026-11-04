@@ -1,17 +1,17 @@
 {
   "Main function": {
     "prefix": "main",
-    "body": ["fn main() {", "    $0", "}"],
+    "body": ["function main() {", "    $0", "}"],
     "description": "Create an Alaco main function"
   },
   "Function": {
-    "prefix": "fn",
-    "body": ["fn ${1:name}(${2})${3: -> ${4:Void}} {", "    $0", "}"],
+    "prefix": "function",
+    "body": ["function ${1:name}(${2})${3:: ${4:void}} {", "    $0", "}"],
     "description": "Create an Alaco function"
   },
   "Struct": {
     "prefix": "struct",
-    "body": ["struct ${1:Name} {", "    ${2:field}: ${3:Int},", "}"],
+    "body": ["struct ${1:Name} {", "    ${2:field}: ${3:int},", "}"],
     "description": "Create a typed Alaco struct"
   },
   "Immutable binding": {
@@ -20,8 +20,8 @@
     "description": "Create an inferred immutable binding"
   },
   "Mutable binding": {
-    "prefix": "letmut",
-    "body": "let mut ${1:name} = ${2:value};$0",
+    "prefix": "var",
+    "body": "var ${1:name} = ${2:value};$0",
     "description": "Create an inferred mutable binding"
   },
   "Import module": {

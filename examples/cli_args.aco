@@ -1,6 +1,6 @@
 import std.args;
 
-fn main() {
+function main() {
     if args.has_flag("--help") {
         println("Usage: cli_args [--name VALUE] [--verbose] FILE...");
         return;
@@ -15,7 +15,7 @@ fn main() {
     println("Positional files:");
     println(args.positional_count());
 
-    let mut index = 0;
+    var index = 0;
     loop (repeat args.positional_count()) {
         println(args.positional(index));
         index = index + 1;

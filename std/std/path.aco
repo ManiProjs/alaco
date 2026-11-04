@@ -1,24 +1,24 @@
 // Lexical path utilities backed by std::filesystem.
-fn join(left: String, right: String) -> String {
+function join(left: string, right: string): string {
     return __builtin_path_join(left, right);
 }
 
-fn basename(value: String) -> String {
+function basename(value: string): string {
     return __builtin_path_basename(value);
 }
 
-fn dirname(value: String) -> String {
+function dirname(value: string): string {
     return __builtin_path_dirname(value);
 }
 
-fn extension(value: String) -> String {
+function extension(value: string): string {
     return __builtin_path_extension(value);
 }
 
-fn stem(value: String) -> String {
+function stem(value: string): string {
     return __builtin_path_stem(value);
 }
 
-fn is_absolute(value: String) -> Bool {
+function is_absolute(value: string): bool {
     return __builtin_path_is_absolute(value);
 }

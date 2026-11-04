@@ -1,7 +1,7 @@
 import std.toml;
 import std.json;
 
-fn main() {
+function main() {
     let config = "[server]\napp_name = 'Alaco # 1'\nport = 8080\ndebug = true\nmessage = \"line\\nnext\"\n";
 
     println("Valid TOML subset:");

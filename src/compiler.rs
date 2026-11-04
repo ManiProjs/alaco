@@ -1361,6 +1361,36 @@ struct Person {
     }
 
     #[test]
+    fn canonical_syntax_accepts_function_var_colon_returns_and_newline_ends() {
+        let source = r#"
+function total(price: int, quantity: int): int {
+    var result = price * quantity
+    if result > 100 {
+        result = result - 10
+    }
+    return result
+}
+
+function main() {
+    let value = total(25, 5)
+    println(value)
+}
+"#;
+        let cpp = Compiler::compile(source, "canonical_syntax.aco")
+            .expect("canonical syntax and newline statement endings should compile");
+        assert!(
+            cpp.contains("long long total(long long price, long long quantity)"),
+            "{cpp}"
+        );
+    }
+
+    #[test]
+    fn legacy_function_and_mutability_syntax_remains_compatible() {
+        let source = "fn helper() -> Int { return 1; } fn main() { let mut count: Int = 1; count = count + 1; }";
+        assert!(Compiler::check(source, "legacy_syntax.aco").is_ok());
+    }
+
+    #[test]
     fn additional_standard_modules_expose_geometry_stats_units_and_validation() {
         let cpp = Compiler::compile(
             r#"

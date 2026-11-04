@@ -1,6 +1,6 @@
 import std.json;
 
-fn main() {
+function main() {
     let payload = "{\"name\":\"Alaco\",\"version\":3,\"stable\":true}";
 
     println("Valid JSON:");

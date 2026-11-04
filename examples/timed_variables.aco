@@ -1,7 +1,7 @@
 import std.timing;
 
-fn main() {
-    let mut session for 2 minutes = "active";
+function main() {
+    var session for 2 minutes = "active";
     println(session);
 
     session = "refreshed";

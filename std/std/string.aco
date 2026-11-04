@@ -1,39 +1,39 @@
-fn concat(left: String, right: String) -> String {
+function concat(left: string, right: string): string {
     return left + right;
 }
 
-fn is_empty(value: String) -> Bool {
+function is_empty(value: string): bool {
     return value == "";
 }
 
-fn repeat_string(value: String, count: Int) -> String {
-    let mut result: String = "";
+function repeat_string(value: string, count: int): string {
+    var result: string = "";
     loop (repeat count) {
         result = result + value;
     }
     return result;
 }
 
-fn surround(value: String, wrapper: String) -> String {
+function surround(value: string, wrapper: string): string {
     return wrapper + value + wrapper;
 }
 
-fn join3(first: String, separator: String, second: String, third: String) -> String {
+function join3(first: string, separator: string, second: string, third: string): string {
     return first + separator + second + separator + third;
 }
 
-fn is_not_empty(value: String) -> Bool {
+function is_not_empty(value: string): bool {
     return value != "";
 }
 
-fn concat3(first: String, second: String, third: String) -> String {
+function concat3(first: string, second: string, third: string): string {
     return first + second + third;
 }
 
-fn join4(first: String, separator: String, second: String, third: String, fourth: String) -> String {
+function join4(first: string, separator: string, second: string, third: string, fourth: string): string {
     return first + separator + second + separator + third + separator + fourth;
 }
 
-fn prefix_suffix(value: String, prefix: String, suffix: String) -> String {
+function prefix_suffix(value: string, prefix: string, suffix: string): string {
     return prefix + value + suffix;
 }
