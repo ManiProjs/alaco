@@ -61,7 +61,7 @@ function process_ids(ids: Array<Option<int>>) {
 
 The currently recognized type constructors are `Array<T>`, `Set<T>`, `Map<K, V>`, `Option<T>`, and `Result<T, E>`. The compiler checks constructor names, argument counts, nested types, and rejects `void` in value positions. Tuple types use `(T, U, ...)` and require at least two elements. Function types use `fn(ArgumentType, ...) -> ReturnType`; values with a function type can be called, with argument count and argument types checked at compile time. The native backend represents these types using C++ standard-library containers, `std::optional`, `std::variant`, `std::tuple`, and `std::function`.
 
-These constructors currently provide type annotations and native layout. Alaco does not yet provide generic function or generic struct declarations, collection literals and operations, `Option`/`Result` constructors and pattern matching, or trait declarations. Enums and exhaustive matching are supported for named, payload-free variants; payload-bearing variants and generic declarations remain future work.
+`Option<T>` has runtime values: `none` creates an empty option and `some(value)` wraps a value. Read `.is_some` or `.is_none` to inspect it, and `.value` to access a present value; reading `.value` from `none` raises a catchable runtime error. A `none` value can be assigned to an explicitly typed `Option<T>` binding. `Result<T, E>` currently provides type annotations and native layout only. Alaco does not yet provide generic function or generic struct declarations, collection literals and operations, `Result` constructors or pattern matching, or trait declarations. Enums and exhaustive matching are supported for named, payload-free variants; payload-bearing variants and generic declarations remain future work.
 
 ### Enums and exhaustive `match`
 
@@ -96,6 +96,23 @@ Every enum match must cover every variant, or include `_` as a fallback. Missing
 Declare functions with `function`, typed parameters, and an optional return type after a colon. Functions without a return type do not return a value. The older `fn` keyword and `->` return annotation remain accepted while existing projects migrate.
 
 Functions with a non-`void` return type must return a value on every statically recognized path. The analyzer recognizes direct returns and `if`/`else` branches that both return; it does not assume that a loop will run or terminate.
+
+### Runtime errors
+
+Raise a runtime error with `throw` and handle it with `try`/`catch`:
+
+```alaco
+function read_name(): string {
+    try {
+        throw "name is unavailable";
+    } catch error {
+        println("Using fallback: ${error}");
+        return "guest";
+    }
+}
+```
+
+The expression after `throw` must have type `string`. A `catch name` binding contains the error message as an immutable string and is visible only inside that catch block. Native output uses `std::runtime_error`; JavaScript output uses `Error`. Uncaught errors terminate the program through the target runtime. For a non-`void` function, a `try`/`catch` counts as returning only when both blocks are statically guaranteed to return; throwing alone does not satisfy the function's return requirement.
 
 ```alaco
 function add(left: int, right: int): int {

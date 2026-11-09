@@ -320,7 +320,7 @@ impl CppCodegen {
 
     fn scan_type_for_runtime(&self, ty: &Type, requirements: &mut RuntimeRequirements) {
         match ty {
-            Type::String => {
+            Type::String | Type::Json => {
                 requirements.string = true;
             }
 
@@ -391,6 +391,18 @@ impl CppCodegen {
                 }
             }
 
+            IrStmt::Throw(value, ..) => self.scan_expr_for_runtime(value, requirements),
+
+            IrStmt::TryCatch {
+                try_block,
+                catch_block,
+                ..
+            } => {
+                requirements.string = true;
+                self.scan_ir_block_for_runtime(try_block, requirements);
+                self.scan_ir_block_for_runtime(catch_block, requirements);
+            }
+
             IrStmt::Skip(..) => {}
 
             IrStmt::Expr(expression, ..) => {
@@ -456,7 +468,8 @@ impl CppCodegen {
             | IrExprKind::Number(..)
             | IrExprKind::String(..)
             | IrExprKind::Interpolation(..)
-            | IrExprKind::Bool(..) => {}
+            | IrExprKind::Bool(..)
+            | IrExprKind::None => {}
 
             IrExprKind::StructLiteral { fields, .. } => {
                 for (_, value) in fields {
@@ -501,6 +514,17 @@ impl CppCodegen {
                         "__builtin_eprintln" | "eprintln" => requirements.eprintln = true,
                         "__builtin_json_is_valid"
                         | "__builtin_json_escape"
+                        | "__builtin_json_parse"
+                        | "__builtin_json_stringify"
+                        | "__builtin_json_kind"
+                        | "__builtin_json_get"
+                        | "__builtin_json_at"
+                        | "__builtin_json_length"
+                        | "__builtin_json_keys"
+                        | "__builtin_json_as_string"
+                        | "__builtin_json_as_int"
+                        | "__builtin_json_as_float"
+                        | "__builtin_json_as_bool"
                         | "__builtin_json_has_key"
                         | "__builtin_json_is_null"
                         | "__builtin_json_get_string"
@@ -590,6 +614,7 @@ impl CppCodegen {
         self.push_line("#include <map>");
         self.push_line("#include <optional>");
         self.push_line("#include <set>");
+        self.push_line("#include <stdexcept>");
         self.push_line("#include <tuple>");
         self.push_line("#include <utility>");
         self.push_line("#include <variant>");
@@ -633,6 +658,11 @@ impl CppCodegen {
             self.push_line("#include <cctype>");
             self.push_line("#include <cstdio>");
             self.push_line("#include <string>");
+        }
+
+        if requirements.json {
+            self.push_line("#include <stdexcept>");
+            self.push_line("#include <cmath>");
         }
 
         if requirements.http {
@@ -935,10 +965,23 @@ impl CppCodegen {
         self.push_line("    bool number_value() { std::size_t start = pos; if (pos < text.size() && text[pos] == '-') ++pos; if (pos >= text.size()) return false; if (text[pos] == '0') ++pos; else { if (!std::isdigit(static_cast<unsigned char>(text[pos]))) return false; while (pos < text.size() && std::isdigit(static_cast<unsigned char>(text[pos]))) ++pos; } if (pos < text.size() && text[pos] == '.') { ++pos; std::size_t digits = pos; while (pos < text.size() && std::isdigit(static_cast<unsigned char>(text[pos]))) ++pos; if (digits == pos) return false; } if (pos < text.size() && (text[pos] == 'e' || text[pos] == 'E')) { ++pos; if (pos < text.size() && (text[pos] == '+' || text[pos] == '-')) ++pos; std::size_t digits = pos; while (pos < text.size() && std::isdigit(static_cast<unsigned char>(text[pos]))) ++pos; if (digits == pos) return false; } return pos > start; }");
         self.push_line("    bool value() { ws(); if (pos >= text.size()) return false; char c = text[pos]; if (c == '\\\"') return string_value(); if (c == '{') { ++pos; ws(); if (take('}')) return true; do { if (!string_value() || !take(':') || !value()) return false; ws(); if (take('}')) return true; } while (take(',')); return false; } if (c == '[') { ++pos; ws(); if (take(']')) return true; do { if (!value()) return false; ws(); if (take(']')) return true; } while (take(',')); return false; } for (const char* word : {\"true\", \"false\", \"null\"}) { std::string candidate(word); if (text.compare(pos, candidate.size(), candidate) == 0) { pos += candidate.size(); return true; } } return number_value(); }");
         self.push_line("    std::string raw_for_key(const std::string& wanted) { pos = 0; if (!take('{')) return {}; ws(); if (take('}')) return {}; while (pos < text.size()) { ws(); std::size_t key_start = pos; if (!string_value()) return {}; std::size_t key_end = pos; std::string key = __alaco_json_decode(text.substr(key_start, key_end - key_start)); if (!take(':')) return {}; std::size_t value_start = pos; if (!value()) return {}; std::size_t value_end = pos; if (key == wanted) return text.substr(value_start, value_end - value_start); if (!take(',')) break; } return {}; }");
-        self.push_line("public: explicit __AlacoJsonParser(const std::string& source) : text(source) {} bool valid() { if (!value()) return false; ws(); return pos == text.size(); } std::string get_raw(const std::string& key) { if (!valid()) return {}; return raw_for_key(key); } std::vector<std::string> array_values() { std::vector<std::string> values; pos = 0; if (!take('[')) return {}; ws(); if (take(']')) { ws(); return pos == text.size() ? values : std::vector<std::string>{}; } while (pos < text.size()) { ws(); std::size_t start = pos; if (!value()) return {}; values.push_back(text.substr(start, pos - start)); if (take(']')) { ws(); return pos == text.size() ? values : std::vector<std::string>{}; } if (!take(',')) return {}; } return {}; }");
+        self.push_line("    std::vector<std::string> object_keys() { std::vector<std::string> keys; pos = 0; if (!take('{')) return {}; ws(); if (take('}')) { ws(); return pos == text.size() ? keys : std::vector<std::string>{}; } while (pos < text.size()) { ws(); std::size_t start = pos; if (!string_value()) return {}; std::string key = __alaco_json_decode(text.substr(start, pos - start)); if (!take(':') || !value()) return {}; keys.push_back(key); if (take('}')) { ws(); return pos == text.size() ? keys : std::vector<std::string>{}; } if (!take(',')) return {}; } return {}; }");
+        self.push_line("public: explicit __AlacoJsonParser(const std::string& source) : text(source) {} bool valid() { if (!value()) return false; ws(); return pos == text.size(); } std::string get_raw(const std::string& key) { if (!valid()) return {}; return raw_for_key(key); } std::vector<std::string> array_values() { std::vector<std::string> values; pos = 0; if (!take('[')) return {}; ws(); if (take(']')) { ws(); return pos == text.size() ? values : std::vector<std::string>{}; } while (pos < text.size()) { ws(); std::size_t start = pos; if (!value()) return {}; values.push_back(text.substr(start, pos - start)); if (take(']')) { ws(); return pos == text.size() ? values : std::vector<std::string>{}; } if (!take(',')) return {}; } return {}; } std::vector<std::string> keys() { if (!valid()) return {}; return object_keys(); }");
         self.push_line("};");
         self.push_line("static bool __builtin_json_is_valid(const std::string& text) { return __AlacoJsonParser(text).valid(); }");
+        self.push_line("static std::string __builtin_json_parse(const std::string& text) { if (!__builtin_json_is_valid(text)) throw std::runtime_error(\"invalid JSON document\"); return text; }");
+        self.push_line("static std::string __builtin_json_stringify(const std::string& text) { return __builtin_json_parse(text); }");
+        self.push_line("static std::string __builtin_json_kind(const std::string& text) { if (!__builtin_json_is_valid(text)) throw std::runtime_error(\"invalid JSON value\"); auto at = text.find_first_not_of(\" \\t\\r\\n\"); if (at == std::string::npos) return \"invalid\"; char c = text[at]; if (c == '{') return \"object\"; if (c == '[') return \"array\"; if (c == '\\\"') return \"string\"; if (c == 't' || c == 'f') return \"bool\"; if (c == 'n') return \"null\"; return \"number\"; }");
         self.push_line("static std::string __builtin_json_get_raw(const std::string& text, const std::string& key) { return __AlacoJsonParser(text).get_raw(key); }");
+        self.push_line("static std::string __builtin_json_get(const std::string& text, const std::string& key) { auto raw = __builtin_json_get_raw(text, key); return raw.empty() ? std::string(\"null\") : raw; }");
+        self.push_line("static std::string __builtin_json_at(const std::string& text, long long index) { auto values = __AlacoJsonParser(text).array_values(); return index >= 0 && static_cast<std::size_t>(index) < values.size() ? values[static_cast<std::size_t>(index)] : std::string(\"null\"); }");
+        self.push_line("static long long __builtin_json_length(const std::string& text) { auto kind = __builtin_json_kind(text); if (kind == \"array\") return static_cast<long long>(__AlacoJsonParser(text).array_values().size()); if (kind == \"object\") return static_cast<long long>(__AlacoJsonParser(text).keys().size()); return 0; }");
+        self.push_line("static std::string __builtin_json_escape(const std::string& text);");
+        self.push_line(r#"static std::string __builtin_json_keys(const std::string& text) { auto keys = __AlacoJsonParser(text).keys(); std::string out = "["; for (std::size_t i = 0; i < keys.size(); ++i) { if (i) out += ","; out += "\"" + __builtin_json_escape(keys[i]) + "\""; } return out + "]"; }"#);
+        self.push_line("static std::string __builtin_json_as_string(const std::string& text, const std::string& fallback) { if (__builtin_json_kind(text) != \"string\") return fallback; return __alaco_json_decode(text); }");
+        self.push_line("static long long __builtin_json_as_int(const std::string& text, long long fallback) { if (__builtin_json_kind(text) != \"number\" || text.find_first_of(\".eE\") != std::string::npos) return fallback; try { std::size_t n = 0; auto value = std::stoll(text, &n); return n == text.size() ? value : fallback; } catch (...) { return fallback; } }");
+        self.push_line("static double __builtin_json_as_float(const std::string& text, double fallback) { if (__builtin_json_kind(text) != \"number\") return fallback; try { std::size_t n = 0; auto value = std::stod(text, &n); return n == text.size() && std::isfinite(value) ? value : fallback; } catch (...) { return fallback; } }");
+        self.push_line("static bool __builtin_json_as_bool(const std::string& text, bool fallback) { auto kind = __builtin_json_kind(text); return kind == \"bool\" ? text == \"true\" : fallback; }");
         self.push_line("static bool __builtin_json_has_key(const std::string& text, const std::string& key) { return !__builtin_json_get_raw(text, key).empty(); }");
         self.push_line("static bool __builtin_json_is_null(const std::string& text, const std::string& key) { return __builtin_json_get_raw(text, key) == \"null\"; }");
         self.push_line("static long long __builtin_json_get_int(const std::string& text, const std::string& key, long long fallback) { auto raw = __builtin_json_get_raw(text, key); if (raw.empty() || raw.find_first_of(\".eE\") != std::string::npos) return fallback; try { std::size_t n = 0; auto v = std::stoll(raw, &n); return n == raw.size() ? v : fallback; } catch (...) { return fallback; } }");
@@ -1798,8 +1841,10 @@ static bool __builtin_db_migrate(long long id, long long version, const std::str
                 | IrStmt::Destructure { span, .. }
                 | IrStmt::If { span, .. }
                 | IrStmt::Loop { span, .. }
-                | IrStmt::Match { span, .. } => *span,
+                | IrStmt::Match { span, .. }
+                | IrStmt::TryCatch { span, .. } => *span,
                 IrStmt::Return(_, span)
+                | IrStmt::Throw(_, span)
                 | IrStmt::Stop(_, span)
                 | IrStmt::Skip(span)
                 | IrStmt::Expr(_, span) => *span,
@@ -1887,6 +1932,37 @@ static bool __builtin_db_migrate(long long id, long long version, const std::str
                             }
                         }),
                 );
+            }
+            IrStmt::Throw(value, _) => {
+                self.push_line(&format!(
+                    "throw std::runtime_error({});",
+                    self.ir_expression(value)
+                ));
+            }
+            IrStmt::TryCatch {
+                try_block,
+                error_name,
+                catch_block,
+                span,
+            } => {
+                let exception_name = format!("_alaco_exception_{}", span.start);
+                self.push_line("try {");
+                self.indent += 1;
+                self.generate_ir_block_contents(try_block);
+                self.indent -= 1;
+                self.push_line(&format!(
+                    "}} catch (const std::exception& {}) {{",
+                    exception_name
+                ));
+                self.indent += 1;
+                self.push_line(&format!(
+                    "const std::string {} = {}.what();",
+                    self.cpp_identifier(error_name),
+                    exception_name
+                ));
+                self.generate_ir_block_contents(catch_block);
+                self.indent -= 1;
+                self.push_line("}");
             }
             IrStmt::Skip(_) => self.push_line("continue;"),
             IrStmt::Expr(expr, _) => self.push_line(&format!("{};", self.ir_expression(expr))),
@@ -2002,6 +2078,7 @@ static bool __builtin_db_migrate(long long id, long long version, const std::str
                 output
             }
             IrExprKind::Bool(value) => value.to_string(),
+            IrExprKind::None => "std::nullopt".into(),
             IrExprKind::Identifier(name) => self.expression_identifier(name),
             IrExprKind::Previous(name) if self.lifetime_variables.contains(name) => {
                 format!("{}.previous()", self.cpp_identifier(name))
@@ -2093,10 +2170,23 @@ static bool __builtin_db_migrate(long long id, long long version, const std::str
                     .map(|a| self.ir_expression(a))
                     .collect::<Vec<_>>()
                     .join(", ");
+                if matches!(callee, IrCallee::Identifier(name) if name == "some")
+                    && matches!(&expression.ty, Type::Applied(name, _) if name == "Option")
+                {
+                    return format!("{}({})", self.type_name(&expression.ty), args);
+                }
                 format!("{}({})", self.ir_callee(callee), args)
             }
             IrExprKind::Member { object, member } => {
-                if let IrExprKind::Identifier(enum_name) = &object.kind
+                if matches!(&object.ty, Type::Applied(name, _) if name == "Option") {
+                    let object = self.ir_expression(object);
+                    match member.as_str() {
+                        "is_some" => format!("({object}.has_value())"),
+                        "is_none" => format!("(!{object}.has_value())"),
+                        "value" => format!("({object}.value())"),
+                        _ => format!("{object}.{}", self.cpp_identifier(member)),
+                    }
+                } else if let IrExprKind::Identifier(enum_name) = &object.kind
                     && self.enum_names.contains(enum_name)
                 {
                     format!(
@@ -2227,11 +2317,15 @@ static bool __builtin_db_migrate(long long id, long long version, const std::str
 
             Type::String => "std::string".to_string(),
 
+            Type::Json => "std::string".to_string(),
+
             Type::Shell => "Shell".to_string(),
 
             Type::ShellResult => "ShellResult".to_string(),
 
             Type::Void => "void".to_string(),
+
+            Type::Never => "std::monostate".to_string(),
 
             Type::Named(name) => self.cpp_identifier(name),
             Type::Applied(name, arguments) => {

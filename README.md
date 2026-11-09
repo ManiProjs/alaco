@@ -34,6 +34,8 @@ When using an installed `alaco` executable, use the same commands directly. The 
 | `alaco new <name>` | Create a new project with a working entry point. |
 | `alaco init [directory]` | Initialize a project in an existing directory without overwriting an entry point. |
 | `alaco check [file.aco]` | Parse and analyze a source file. Defaults to `src/main.aco` in a project. |
+| `alaco fmt [file.aco]` | Format a source file in place. |
+| `alaco fmt [file.aco] --check` | Check formatting without modifying the file. |
 | `alaco transpile [file.aco]` | Generate JavaScript source without building a native executable. Defaults to a sibling `.js` file. |
 | `alaco transpile [file.aco] --output <path>` | Choose the generated JavaScript output path. |
 | `alaco explain [file.aco]` | Check a file and show diagnostics when errors are found. |
@@ -45,6 +47,8 @@ When using an installed `alaco` executable, use the same commands directly. The 
 | `alaco doctor` | Check for the C++ compiler and installed standard library. |
 | `alaco manifest` | Validate and display `Alaco.toml` package metadata. |
 | `alaco add <git-repo>` | Install a library from Git and add it to `Alaco.toml`. |
+| `alaco lock` | Resolve installed Git/path dependencies and write `Alaco.lock`. |
+| `alaco lock --check` | Verify that `Alaco.lock` matches the manifest and installed Git revisions. |
 | `alaco lsp` | Start the Language Server Protocol server over stdio for editor features. |
 | `alaco --help` | Show command-line help. |
 
@@ -87,13 +91,13 @@ cache = true
 source-map = false
 ```
 
-`name` and a semantic `version` are required. `edition` currently supports `2026`; `entry` defaults to `src/main.aco` and must be a relative `.aco` path inside the package. Run `alaco manifest` to validate and inspect the manifest. Run `alaco add <git-repo>` from a project directory to clone a repository containing `Alaco.toml`; Alaco installs it under `.alaco/packages/`, pins the resolved Git commit in `Alaco.toml`, and recursively installs that library's Git and local-path dependencies. Every Git dependency is pinned to its resolved commit SHA, including transitive dependencies. Import the package entry with `import package_name;`, or a module with `import package_name.module;`. Hyphens in package names are normalized to underscores for the dependency/import name. There is no registry: version-only declarations without a Git or path source produce an error. Cyclic package dependency graphs are rejected with a diagnostic.
+`name` and a semantic `version` are required. `edition` currently supports `2026`; `entry` defaults to `src/main.aco` and must be a relative `.aco` path inside the package. Run `alaco manifest` to validate and inspect the manifest. Run `alaco add <git-repo>` from a project directory to clone a repository containing `Alaco.toml`; Alaco installs it under `.alaco/packages/`, pins the resolved Git commit in `Alaco.toml`, and recursively installs that library's Git and local-path dependencies. `Alaco.lock` records the resolved dependency graph and immutable Git revisions. `alaco lock --check` verifies that the lockfile still matches the manifest and installed checkouts; builds and runs reject a stale lockfile when one is present. Path dependencies remain linked to their local directories and are not content-frozen. Import the package entry with `import package_name;`, or a module with `import package_name.module;`. Hyphens in package names are normalized to underscores for the dependency/import name. There is no registry: version-only declarations without a Git or path source produce an error. Cyclic package dependency graphs are rejected with a diagnostic.
 
 The optional `[build]` table controls native compilation. `target = "native"` uses the host compiler defaults; another value is passed to Clang as `--target=...`. Only the `cpp` backend is supported. `compiler` selects the C++ compiler executable, and each string in `flags` is passed as a separate compiler argument. `cache` enables a local content-addressed cache under `.alaco-cache` beside the output. Alaco still parses, analyzes, and generates C++ on each invocation; when all inputs match, the cache skips the native compile/link step and reuses the executable. Cache keys include source and module content, standard-library files, compiler identity/version, target, and flags. `source-map = true` preserves the generated `.cpp` file and writes a `.cpp.map.json` sidecar. The sidecar maps generated C++ line numbers to Alaco source paths and line numbers wherever C++ `#line` directives are present. Currently, directives cover statements in the main source file; imported-module statements and generated code outside mapped statements have no source mapping. Cross-compilation requires a compiler that supports the requested target and access to that target's headers, libraries, and runtime. There is no dedicated sysroot setting; pass a compiler option such as `--sysroot=/path/to/sysroot` through `flags` when needed. A target triple alone does not provide a sysroot or cross-compilation toolchain.
 
 ### Tests
 
-Put test programs in `tests/` with one `.aco` file per test. Each file is compiled and run as a separate program; a successful process exit means the test passed. A test can also be run directly with `alaco test tests/example.aco`. Tests in the supplied directory are discovered one level deep and run in filename order. Use `alaco clean` to remove generated build artifacts.
+Put test programs in `tests/` with one `.aco` file per test. Each file is compiled and run as a separate program; a successful process exit means the test passed. A test can also be run directly with `alaco test tests/example.aco`. Directory discovery is recursive and sorted. Use `alaco test --list` to preview discovered files and `alaco test --filter <text>` to run matching paths only. Pass `--setup tests/setup.aco` and `--teardown tests/teardown.aco` to run suite-level Alaco programs before and after the tests; these hooks are separate processes, so use files or other external resources for shared fixtures. Failed tests show their captured standard output and error. Use `alaco clean` to remove generated build artifacts.
 
 ## Documentation
 

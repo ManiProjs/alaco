@@ -1974,6 +1974,312 @@ function main() {
     }
 
     #[test]
+    fn native_and_javascript_backends_catch_string_runtime_errors() {
+        let source = r#"
+            fn main() {
+                try {
+                    println("normal path");
+                } catch ignored {
+                    println("unexpected catch");
+                }
+                let error = "outer value";
+                try {
+                    throw "caught message";
+                } catch error {
+                    println(error);
+                }
+                println(error);
+            }
+        "#;
+        let expected = "normal path\ncaught message\nouter value\n";
+
+        let native_path =
+            std::env::temp_dir().join(format!("alaco_try_catch_native_{}", std::process::id()));
+        Compiler::build(source, "try_catch_test.aco", &native_path)
+            .expect("try/catch should compile to native code");
+        let native = Command::new(&native_path)
+            .output()
+            .expect("run native try/catch output");
+        let _ = std::fs::remove_file(&native_path);
+        assert!(
+            native.status.success(),
+            "native failed: {}",
+            String::from_utf8_lossy(&native.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&native.stdout), expected);
+
+        let javascript = Compiler::transpile_javascript(source, "try_catch_test.aco")
+            .expect("try/catch should transpile to JavaScript");
+        let js = Command::new("node")
+            .arg("-e")
+            .arg(javascript)
+            .output()
+            .expect("run JavaScript try/catch output");
+        assert!(
+            js.status.success(),
+            "JavaScript failed: {}",
+            String::from_utf8_lossy(&js.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&js.stdout), expected);
+    }
+
+    #[test]
+    fn native_and_javascript_backends_propagate_uncaught_runtime_errors() {
+        let source = r#"fn main() { throw "unhandled marker"; }"#;
+
+        let native_path = std::env::temp_dir().join(format!(
+            "alaco_uncaught_throw_native_{}",
+            std::process::id()
+        ));
+        Compiler::build(source, "uncaught_throw_test.aco", &native_path)
+            .expect("throw should compile to native code");
+        let native = Command::new(&native_path)
+            .output()
+            .expect("run native uncaught throw");
+        let _ = std::fs::remove_file(&native_path);
+        assert!(!native.status.success(), "uncaught native throw must fail");
+        assert!(String::from_utf8_lossy(&native.stderr).contains("unhandled marker"));
+
+        let javascript = Compiler::transpile_javascript(source, "uncaught_throw_test.aco")
+            .expect("throw should transpile to JavaScript");
+        let js = Command::new("node")
+            .arg("-e")
+            .arg(javascript)
+            .output()
+            .expect("run JavaScript uncaught throw");
+        assert!(!js.status.success(), "uncaught JavaScript throw must fail");
+        assert!(String::from_utf8_lossy(&js.stderr).contains("unhandled marker"));
+    }
+
+    #[test]
+    fn json_values_traverse_nested_objects_and_arrays_on_both_backends() {
+        let source = r#"
+            import std.json;
+
+            function main() {
+                let document = json.parse("{\"user\":{\"name\":\"Ada\",\"active\":true},\"items\":[1,null,3]}");
+                let user = json.get(document, "user");
+                let items = json.get(document, "items");
+                println(json.kind(user));
+                println(json.as_string(json.get(user, "name"), "missing"));
+                println(json.as_bool(json.get(user, "active"), false));
+                println(json.as_float(json.parse("2.5"), -1.0));
+                println(json.length(items));
+                println(json.as_int(json.at(items, 0), -1));
+                println(json.kind(json.at(items, 1)));
+                println(json.length(json.keys(user)));
+                println(json.has_key("{\"empty\":\"\"}", "empty"));
+                println(json.stringify(json.get(user, "name")));
+                println(json.stringify(json.keys(json.parse("{\"a\":\"b\"}"))));
+                try {
+                    let invalid = json.parse("{");
+                } catch error {
+                    println("parse-error");
+                }
+            }
+        "#;
+        let expected =
+            "object\nAda\ntrue\n2.5\n3\n1\nnull\n2\ntrue\n\"Ada\"\n[\"a\"]\nparse-error\n";
+
+        let native_path =
+            std::env::temp_dir().join(format!("alaco_json_values_native_{}", std::process::id()));
+        Compiler::build(source, "json_values_test.aco", &native_path)
+            .expect("Json values should compile to native code");
+        let native = Command::new(&native_path)
+            .output()
+            .expect("run native Json value test");
+        let _ = std::fs::remove_file(&native_path);
+        assert!(
+            native.status.success(),
+            "native Json test failed: {}",
+            String::from_utf8_lossy(&native.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&native.stdout), expected);
+
+        let javascript = Compiler::transpile_javascript(source, "json_values_test.aco")
+            .expect("Json values should transpile to JavaScript");
+        let js = Command::new("node")
+            .arg("-e")
+            .arg(javascript)
+            .output()
+            .expect("run JavaScript Json value test");
+        assert!(
+            js.status.success(),
+            "JavaScript Json test failed: {}",
+            String::from_utf8_lossy(&js.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&js.stdout), expected);
+    }
+
+    #[test]
+    fn option_values_support_none_some_and_checked_access_on_both_backends() {
+        let source = r#"
+            function main() {
+                let empty: Option<Int> = none;
+                let present = some(42);
+                println(empty.is_none);
+                println(empty.is_some);
+                println(present.is_some);
+                println(present.value);
+                try {
+                    println(empty.value);
+                } catch error {
+                    println("caught");
+                }
+            }
+        "#;
+        let expected = "true\nfalse\ntrue\n42\ncaught\n";
+
+        let native_path =
+            std::env::temp_dir().join(format!("alaco_option_values_native_{}", std::process::id()));
+        Compiler::build(source, "option_values_test.aco", &native_path)
+            .expect("Option values should compile to native code");
+        let native = Command::new(&native_path)
+            .output()
+            .expect("run native Option value test");
+        let _ = std::fs::remove_file(&native_path);
+        assert!(
+            native.status.success(),
+            "native Option test failed: {}",
+            String::from_utf8_lossy(&native.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&native.stdout), expected);
+
+        let javascript = Compiler::transpile_javascript(source, "option_values_test.aco")
+            .expect("Option values should transpile to JavaScript");
+        let js = Command::new("node")
+            .arg("-e")
+            .arg(javascript)
+            .output()
+            .expect("run JavaScript Option value test");
+        assert!(
+            js.status.success(),
+            "JavaScript Option test failed: {}",
+            String::from_utf8_lossy(&js.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&js.stdout), expected);
+    }
+
+    #[test]
+    fn standard_test_assertions_run_on_native_and_javascript_backends() {
+        let source = r#"
+            import std.test;
+
+            function main() {
+                test.assert_true(true);
+                test.assert_false(false);
+                test.assert_equal_int(42, 42);
+                test.assert_equal_string("alaco", "alaco");
+                test.assert_equal_bool(false, false);
+                test.assert(3 < 4, "comparison should hold");
+            }
+        "#;
+
+        let native_path =
+            std::env::temp_dir().join(format!("alaco_std_test_native_{}", std::process::id()));
+        Compiler::build(source, "std_test_assertions.aco", &native_path)
+            .expect("std.test should compile to native code");
+        let native = Command::new(&native_path)
+            .output()
+            .expect("run native assertion test");
+        let _ = std::fs::remove_file(&native_path);
+        assert!(
+            native.status.success(),
+            "native assertion test failed: {}",
+            String::from_utf8_lossy(&native.stderr)
+        );
+
+        let javascript = Compiler::transpile_javascript(source, "std_test_assertions.aco")
+            .expect("std.test should transpile to JavaScript");
+        let js = Command::new("node")
+            .arg("-e")
+            .arg(javascript)
+            .output()
+            .expect("run JavaScript assertion test");
+        assert!(
+            js.status.success(),
+            "JavaScript assertion test failed: {}",
+            String::from_utf8_lossy(&js.stderr)
+        );
+
+        let failure_source = r#"
+            import std.test;
+            function main() { test.assert_equal_int(1, 2); }
+        "#;
+        let failure_path = std::env::temp_dir().join(format!(
+            "alaco_std_test_failure_native_{}",
+            std::process::id()
+        ));
+        Compiler::build(failure_source, "std_test_failure.aco", &failure_path)
+            .expect("failing std.test should compile to native code");
+        let native_failure = Command::new(&failure_path)
+            .output()
+            .expect("run native failing assertion");
+        let _ = std::fs::remove_file(&failure_path);
+        assert!(!native_failure.status.success());
+        assert!(
+            String::from_utf8_lossy(&native_failure.stderr).contains("expected 2, got 1"),
+            "{}",
+            String::from_utf8_lossy(&native_failure.stderr)
+        );
+
+        let javascript = Compiler::transpile_javascript(failure_source, "std_test_failure.aco")
+            .expect("failing std.test should transpile to JavaScript");
+        let js_failure = Command::new("node")
+            .arg("-e")
+            .arg(javascript)
+            .output()
+            .expect("run JavaScript failing assertion");
+        assert!(!js_failure.status.success());
+        assert!(
+            String::from_utf8_lossy(&js_failure.stderr).contains("expected 2, got 1"),
+            "{}",
+            String::from_utf8_lossy(&js_failure.stderr)
+        );
+    }
+
+    #[test]
+    fn runtime_error_analysis_checks_throw_types_catch_scope_and_return_flow() {
+        let invalid_throw =
+            Compiler::check("fn main() { throw 42; }", "invalid_throw_type_test.aco");
+        assert!(invalid_throw.is_err(), "throw must require a string");
+        assert!(format!("{:?}", invalid_throw.unwrap_err()).contains("String"));
+
+        let out_of_scope = Compiler::check(
+            "fn main() { try {} catch error {} println(error); }",
+            "catch_scope_test.aco",
+        );
+        assert!(out_of_scope.is_err(), "catch binding must be block-scoped");
+
+        let reassigned = Compiler::check(
+            "fn main() { try {} catch error { error = \"changed\"; } }",
+            "catch_immutable_test.aco",
+        );
+        assert!(reassigned.is_err(), "catch binding must be immutable");
+
+        let complete = Compiler::check(
+            "fn choose() -> Int { try { return 1; } catch error { return 2; } } fn main() {}",
+            "try_catch_return_test.aco",
+        );
+        assert!(complete.is_ok(), "both branches return: {complete:?}");
+
+        let incomplete = Compiler::check(
+            "fn choose() -> Int { try { return 1; } catch error { println(error); } } fn main() {}",
+            "try_catch_missing_return_test.aco",
+        );
+        assert!(incomplete.is_err(), "a catch path without return must fail");
+
+        let throw_only = Compiler::check(
+            "fn choose() -> Int { throw \"stop\"; } fn main() {}",
+            "throw_only_return_test.aco",
+        );
+        assert!(
+            throw_only.is_err(),
+            "throwing alone must not satisfy conservative return analysis"
+        );
+    }
+
+    #[test]
     fn batteries_included_modules_compile_and_run() {
         let source = r#"
             import std.json;

@@ -8,6 +8,7 @@ mod ir;
 mod ir_validate;
 mod language;
 mod lexer;
+mod lockfile;
 mod lsp;
 mod manifest;
 mod optimizer;
@@ -60,6 +61,15 @@ enum CommandKind {
     /// Check an Alaco source file.
     Check { file: Option<PathBuf> },
 
+    /// Format an Alaco source file.
+    Fmt {
+        file: Option<PathBuf>,
+
+        /// Report whether formatting would change the file without writing it.
+        #[arg(long)]
+        check: bool,
+    },
+
     /// Transpile an Alaco source file to JavaScript.
     Transpile {
         file: Option<PathBuf>,
@@ -87,6 +97,22 @@ enum CommandKind {
         /// A .aco test file or directory containing .aco test files (defaults to tests/).
         #[arg(default_value = "tests")]
         path: PathBuf,
+
+        /// Run only test paths containing this text.
+        #[arg(long)]
+        filter: Option<String>,
+
+        /// List discovered tests without compiling or running them.
+        #[arg(long)]
+        list: bool,
+
+        /// Compile and run this Alaco program once before the test suite.
+        #[arg(long)]
+        setup: Option<PathBuf>,
+
+        /// Compile and run this Alaco program once after the test suite.
+        #[arg(long)]
+        teardown: Option<PathBuf>,
     },
 
     /// Remove generated project build artifacts from target/.
@@ -102,6 +128,13 @@ enum CommandKind {
     Add {
         /// Git repository URL (HTTPS or SSH).
         git_repo: String,
+    },
+
+    /// Resolve package dependencies and write Alaco.lock.
+    Lock {
+        /// Check the existing lockfile without writing it.
+        #[arg(long)]
+        check: bool,
     },
 
     /// Start the Alaco Language Server Protocol (LSP) server over stdio.
@@ -192,6 +225,8 @@ fn run_cli() -> Result<ExitCode> {
 
         Some(CommandKind::Check { file }) => check(&resolve_source(file)?),
 
+        Some(CommandKind::Fmt { file, check }) => format_file(&resolve_source(file)?, check),
+
         Some(CommandKind::Transpile { file, output }) => {
             transpile(&resolve_source(file)?, output.as_deref())
         }
@@ -204,7 +239,19 @@ fn run_cli() -> Result<ExitCode> {
 
         Some(CommandKind::Run { file }) => run(&resolve_source(file)?),
 
-        Some(CommandKind::Test { path }) => test(&path),
+        Some(CommandKind::Test {
+            path,
+            filter,
+            list,
+            setup,
+            teardown,
+        }) => test(
+            &path,
+            filter.as_deref(),
+            list,
+            setup.as_deref(),
+            teardown.as_deref(),
+        ),
 
         Some(CommandKind::Clean) => clean(),
 
@@ -213,6 +260,8 @@ fn run_cli() -> Result<ExitCode> {
         Some(CommandKind::Manifest) => show_manifest(),
 
         Some(CommandKind::Add { git_repo }) => add_dependency(&git_repo),
+
+        Some(CommandKind::Lock { check }) => lockfile::write_for_current_package(check),
 
         Some(CommandKind::Lsp) => lsp::run()
             .map(|()| ExitCode::SUCCESS)
@@ -545,6 +594,9 @@ fn add_dependency(git_repo: &str) -> Result<ExitCode> {
     println!(
         "\n  Import it in your source with `import {dependency_name};` or `import {dependency_name}.module;`."
     );
+    if let Err(error) = crate::lockfile::write_for_current_package(false) {
+        eprintln!("  Warning: dependency added, but Alaco.lock was not updated: {error}");
+    }
     Ok(ExitCode::SUCCESS)
 }
 
@@ -895,13 +947,36 @@ fn insert_dependency(source: &str, declaration: &str) -> String {
     result
 }
 
-fn test(path: &Path) -> Result<ExitCode> {
-    let tests = discover_tests(path)?;
+fn test(
+    path: &Path,
+    filter: Option<&str>,
+    list_only: bool,
+    setup: Option<&Path>,
+    teardown: Option<&Path>,
+) -> Result<ExitCode> {
+    let mut tests = discover_tests(path)?;
+    if let Some(filter) = filter {
+        tests.retain(|test| test.to_string_lossy().contains(filter));
+    }
     if tests.is_empty() {
         return Err(miette::miette!(
             "no .aco tests found in '{}'; add test programs to tests/ or pass a test file",
             path.display()
         ));
+    }
+
+    if list_only {
+        for test_file in &tests {
+            println!("{}", test_file.display());
+        }
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    if let Some(setup) = setup
+        && !run_test_hook(setup, "setup")?
+    {
+        eprintln!("  {} Test setup failed; suite was not started", red("FAIL"));
+        return Ok(ExitCode::FAILURE);
     }
 
     println!("  {} {} test program(s)", bold("Testing"), tests.len());
@@ -921,29 +996,38 @@ fn test(path: &Path) -> Result<ExitCode> {
             })?;
         }
 
-        let result = (|| -> Result<bool> {
+        let result = (|| -> Result<std::process::Output> {
             let source = read_source(test_file)?;
             Compiler::build(&source, &label, &output)?;
-            let status = Command::new(executable_path(&output))
-                .status()
+            let result = Command::new(executable_path(&output))
+                .output()
                 .map_err(|error| {
                     miette::miette!("failed to run test '{}': {error}", test_file.display())
                 })?;
-            Ok(status.success())
+            Ok(result)
         })();
         cleanup(&output);
 
         match result {
-            Ok(true) => {
+            Ok(output) if output.status.success() => {
                 passed += 1;
                 println!("  {} {label}", green("PASS"));
             }
-            Ok(false) => {
+            Ok(output) => {
                 failed += 1;
                 println!(
-                    "  {} {label} (test program exited unsuccessfully)",
-                    red("FAIL")
+                    "  {} {label} (exit code {})",
+                    red("FAIL"),
+                    output.status.code().unwrap_or(1)
                 );
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                if !stdout.trim().is_empty() {
+                    eprintln!("    stdout:\n{}", indent_lines(stdout.trim(), "      "));
+                }
+                if !stderr.trim().is_empty() {
+                    eprintln!("    stderr:\n{}", indent_lines(stderr.trim(), "      "));
+                }
             }
             Err(error) => {
                 failed += 1;
@@ -951,6 +1035,12 @@ fn test(path: &Path) -> Result<ExitCode> {
                 eprintln!("    {error:?}");
             }
         }
+    }
+
+    if let Some(teardown) = teardown
+        && !run_test_hook(teardown, "teardown")?
+    {
+        failed += 1;
     }
 
     println!("\n  {passed} passed; {failed} failed");
@@ -961,6 +1051,56 @@ fn test(path: &Path) -> Result<ExitCode> {
     } else {
         ExitCode::FAILURE
     })
+}
+
+fn run_test_hook(file: &Path, label: &str) -> Result<bool> {
+    let source = read_source(file)?;
+    let output = test_output_path(file);
+    if let Some(parent) = output.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            miette::miette!("failed to create test hook output directory: {error}")
+        })?;
+    }
+    let result = (|| -> Result<std::process::Output> {
+        Compiler::build(&source, &file.display().to_string(), &output)?;
+        Command::new(executable_path(&output))
+            .output()
+            .map_err(|error| {
+                miette::miette!("failed to run {label} hook '{}': {error}", file.display())
+            })
+    })();
+    cleanup(&output);
+    match result {
+        Ok(output) if output.status.success() => {
+            println!("  {} {label}: {}", green("PASS"), file.display());
+            Ok(true)
+        }
+        Ok(output) => {
+            eprintln!(
+                "  {} {label}: {} (exit code {})",
+                red("FAIL"),
+                file.display(),
+                output.status.code().unwrap_or(1)
+            );
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if !stdout.trim().is_empty() {
+                eprintln!("    stdout:\n{}", indent_lines(stdout.trim(), "      "));
+            }
+            if !stderr.trim().is_empty() {
+                eprintln!("    stderr:\n{}", indent_lines(stderr.trim(), "      "));
+            }
+            Ok(false)
+        }
+        Err(error) => {
+            eprintln!(
+                "  {} {label}: {}\n    {error:?}",
+                red("FAIL"),
+                file.display()
+            );
+            Ok(false)
+        }
+    }
 }
 
 fn discover_tests(path: &Path) -> Result<Vec<PathBuf>> {
@@ -981,21 +1121,47 @@ fn discover_tests(path: &Path) -> Result<Vec<PathBuf>> {
         ));
     }
 
-    let mut tests = fs::read_dir(path)
-        .map_err(|error| {
-            miette::miette!(
-                "failed to read test directory '{}': {error}",
-                path.display()
-            )
-        })?
-        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
-        .filter(|entry| {
-            entry.is_file()
-                && entry.extension().and_then(|extension| extension.to_str()) == Some("aco")
-        })
-        .collect::<Vec<_>>();
+    let mut tests = Vec::new();
+    collect_test_files(path, &mut tests)?;
     tests.sort();
     Ok(tests)
+}
+
+fn collect_test_files(path: &Path, tests: &mut Vec<PathBuf>) -> Result<()> {
+    let entries = fs::read_dir(path).map_err(|error| {
+        miette::miette!(
+            "failed to read test directory '{}': {error}",
+            path.display()
+        )
+    })?;
+    for entry in entries {
+        let entry = entry.map_err(|error| {
+            miette::miette!("failed to read an entry in '{}': {error}", path.display())
+        })?;
+        let entry_path = entry.path();
+        let file_type = entry.file_type().map_err(|error| {
+            miette::miette!("failed to inspect '{}': {error}", entry_path.display())
+        })?;
+        if file_type.is_dir() {
+            collect_test_files(&entry_path, tests)?;
+        } else if file_type.is_file()
+            && entry_path
+                .extension()
+                .and_then(|extension| extension.to_str())
+                == Some("aco")
+        {
+            tests.push(entry_path);
+        }
+    }
+    Ok(())
+}
+
+fn indent_lines(value: &str, prefix: &str) -> String {
+    value
+        .lines()
+        .map(|line| format!("{prefix}{line}"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn test_output_path(file: &Path) -> PathBuf {
@@ -1004,7 +1170,14 @@ fn test_output_path(file: &Path) -> PathBuf {
         .file_stem()
         .and_then(|name| name.to_str())
         .unwrap_or("test");
-    root.join(format!(".alaco-test-{stem}-{}", std::process::id()))
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    file.to_string_lossy().hash(&mut hasher);
+    root.join(format!(
+        ".alaco-test-{stem}-{:016x}-{}",
+        hasher.finish(),
+        std::process::id()
+    ))
 }
 
 fn clean() -> Result<ExitCode> {
@@ -1041,6 +1214,28 @@ fn check(file: &Path) -> Result<ExitCode> {
 
     print_finished(start.elapsed());
 
+    Ok(ExitCode::SUCCESS)
+}
+
+fn format_file(file: &Path, check_only: bool) -> Result<ExitCode> {
+    let source = read_source(file)?;
+    let formatted = crate::lsp::format_source(&source).map_err(|error| {
+        miette::Report::new(error).with_source_code(miette::NamedSource::new(
+            file.display().to_string(),
+            source.clone(),
+        ))
+    })?;
+    if formatted == source {
+        println!("  {} {} is formatted", green("✓"), file.display());
+        return Ok(ExitCode::SUCCESS);
+    }
+    if check_only {
+        println!("  {} {} needs formatting", red("✗"), file.display());
+        return Ok(ExitCode::FAILURE);
+    }
+    fs::write(file, formatted)
+        .map_err(|error| miette::miette!("failed to write '{}': {error}", file.display()))?;
+    println!("  {} Formatted {}", green("✓"), file.display());
     Ok(ExitCode::SUCCESS)
 }
 
@@ -1213,16 +1408,25 @@ fn read_source(file: &Path) -> Result<String> {
 }
 
 fn manifest_for_source(file: &Path) -> Result<Option<crate::manifest::Manifest>> {
-    let mut directory = file.parent().unwrap_or_else(|| Path::new("."));
+    let mut directory = file
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
     loop {
         let candidate = directory.join("Alaco.toml");
         if candidate.is_file() {
-            return crate::manifest::Manifest::load(&candidate).map(Some);
+            let manifest = crate::manifest::Manifest::load(&candidate)?;
+            crate::lockfile::verify_if_present(directory, &manifest)?;
+            return Ok(Some(manifest));
         }
         let Some(parent) = directory.parent() else {
             return Ok(None);
         };
-        directory = parent;
+        directory = if parent.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            parent
+        };
     }
 }
 
@@ -1314,8 +1518,9 @@ fn format_duration(duration: Duration) -> String {
 mod tests {
     use super::{
         clean_target, create_project_files, default_output_path, discover_tests, format_duration,
-        init_project, insert_dependency, install_git_dependency_tree, pin_git_dependency_revision,
-        should_use_color, temporary_output_path, transpile,
+        format_file, init_project, insert_dependency, install_git_dependency_tree,
+        pin_git_dependency_revision, run_test_hook, should_use_color, temporary_output_path,
+        transpile,
     };
     use std::{fs, path::Path, time::Duration};
 
@@ -1579,7 +1784,7 @@ mod tests {
     }
 
     #[test]
-    fn test_discovery_finds_only_top_level_aco_files_in_sorted_order() {
+    fn test_discovery_recurses_and_sorts_aco_files() {
         let root = test_directory("test-discovery");
         fs::create_dir_all(root.join("nested")).unwrap();
         fs::write(root.join("z.aco"), "").unwrap();
@@ -1589,8 +1794,72 @@ mod tests {
 
         assert_eq!(
             discover_tests(&root).unwrap(),
-            vec![root.join("a.aco"), root.join("z.aco")]
+            vec![
+                root.join("a.aco"),
+                root.join("nested/ignored.aco"),
+                root.join("z.aco")
+            ]
         );
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn formatter_check_mode_does_not_modify_source() {
+        let root = test_directory("fmt-check");
+        fs::create_dir_all(&root).unwrap();
+        let file = root.join("main.aco");
+        fs::write(&file, "function main(){\nprintln(1);\n}\n").unwrap();
+        assert_eq!(
+            format_file(&file, true).unwrap(),
+            std::process::ExitCode::FAILURE
+        );
+        assert_eq!(
+            fs::read_to_string(&file).unwrap(),
+            "function main(){\nprintln(1);\n}\n"
+        );
+        assert_eq!(
+            format_file(&file, false).unwrap(),
+            std::process::ExitCode::SUCCESS
+        );
+        let formatted = fs::read_to_string(&file).unwrap();
+        assert!(formatted.contains("function main() {"));
+        assert!(formatted.contains("    println(1);"));
+        assert_eq!(
+            format_file(&file, true).unwrap(),
+            std::process::ExitCode::SUCCESS
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn suite_setup_and_teardown_hooks_share_external_fixtures() {
+        let root = test_directory("suite-hooks");
+        fs::create_dir_all(&root).unwrap();
+        let fixture = root.join("fixture.txt");
+        let setup = root.join("setup.aco");
+        let teardown = root.join("teardown.aco");
+        fs::write(
+            &setup,
+            format!(
+                "import std.fs; function main() {{ fs.write_text({:?}, \"ready\"); }}",
+                fixture.to_string_lossy()
+            ),
+        )
+        .unwrap();
+        fs::write(
+            &teardown,
+            format!(
+                "import std.fs; function main() {{ fs.remove({:?}); }}",
+                fixture.to_string_lossy()
+            ),
+        )
+        .unwrap();
+
+        assert!(run_test_hook(&setup, "setup").unwrap());
+        assert_eq!(fs::read_to_string(&fixture).unwrap(), "ready");
+        assert!(run_test_hook(&teardown, "teardown").unwrap());
+        assert!(!fixture.exists());
 
         fs::remove_dir_all(root).unwrap();
     }

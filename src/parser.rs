@@ -334,6 +334,7 @@ impl Parser {
             "Float" | "float" => Type::Float,
             "Bool" | "bool" => Type::Bool,
             "String" | "string" => Type::String,
+            "Json" | "json" => Type::Json,
             "Void" | "void" => Type::Void,
             _ => Type::Named(name.clone()),
         };
@@ -365,7 +366,11 @@ impl Parser {
 
             let is_block_statement = matches!(
                 &statement,
-                Stmt::If { .. } | Stmt::Loop { .. } | Stmt::Match { .. } | Stmt::When { .. }
+                Stmt::If { .. }
+                    | Stmt::Loop { .. }
+                    | Stmt::Match { .. }
+                    | Stmt::When { .. }
+                    | Stmt::TryCatch { .. }
             );
 
             statements.push(statement);
@@ -387,6 +392,8 @@ impl Parser {
         match self.peek().kind.clone() {
             TokenKind::Let | TokenKind::Var => self.parse_let_statement(),
             TokenKind::Return => self.parse_return_statement(),
+            TokenKind::Throw => self.parse_throw_statement(),
+            TokenKind::Try => self.parse_try_catch_statement(),
             TokenKind::Stop => self.parse_stop_statement(),
             TokenKind::Skip => {
                 self.advance();
@@ -515,6 +522,39 @@ impl Parser {
         } else {
             Ok(Stmt::Return(Some(self.parse_expression()?), span))
         }
+    }
+
+    fn parse_throw_statement(&mut self) -> Result<Stmt, AlacoError> {
+        let start = self.token_span(self.peek()).start;
+        self.consume(&TokenKind::Throw, "expected 'throw'")?;
+        if self.is_statement_end() {
+            return Err(self.error("expected a string expression after 'throw'"));
+        }
+        let value = self.parse_expression()?;
+        let span = Span {
+            start,
+            end: value.span().end,
+        };
+        Ok(Stmt::Throw(value, span))
+    }
+
+    fn parse_try_catch_statement(&mut self) -> Result<Stmt, AlacoError> {
+        let start = self.token_span(self.peek()).start;
+        self.consume(&TokenKind::Try, "expected 'try'")?;
+        self.skip_newlines();
+        let try_block = self.parse_block()?;
+        self.skip_newlines();
+        self.consume(&TokenKind::Catch, "expected 'catch' after try block")?;
+        let error_name = self.consume_identifier("expected error binding after 'catch'")?;
+        self.skip_newlines();
+        let catch_block = self.parse_block()?;
+        let end = self.token_span(self.previous()).end;
+        Ok(Stmt::TryCatch {
+            try_block,
+            error_name,
+            catch_block,
+            span: Span { start, end },
+        })
     }
 
     fn parse_stop_statement(&mut self) -> Result<Stmt, AlacoError> {
@@ -1051,6 +1091,11 @@ impl Parser {
             TokenKind::False => {
                 self.advance();
                 Ok(Expr::Bool(false, span))
+            }
+
+            TokenKind::None => {
+                self.advance();
+                Ok(Expr::None(span))
             }
 
             TokenKind::ShellBlock(command) => {

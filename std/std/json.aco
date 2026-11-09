@@ -4,6 +4,58 @@ function is_valid(text: string): bool {
     return __builtin_json_is_valid(text);
 }
 
+// Parse into an opaque, strongly distinguished Json value. Nested values stay
+// Json values as they are traversed; malformed documents raise a runtime error.
+function parse(text: string): Json {
+    return __builtin_json_parse(text);
+}
+
+function stringify(value: Json): string {
+    return __builtin_json_stringify(value);
+}
+
+// JSON value kinds are: null, bool, number, string, array, and object.
+function kind(value: Json): string {
+    return __builtin_json_kind(value);
+}
+
+// Object lookup returns JSON null when the key is absent. Use has_key on the
+// original object when absence must be distinguished from an explicit null.
+function get(value: Json, key: string): Json {
+    return __builtin_json_get(value, key);
+}
+
+// Array lookup is zero-based and returns JSON null for an invalid index.
+function at(value: Json, index: int): Json {
+    return __builtin_json_at(value, index);
+}
+
+// Number of immediate object properties or array elements; scalars return 0.
+function length(value: Json): int {
+    return __builtin_json_length(value);
+}
+
+// Return object keys as a JSON array of strings. Non-objects return [].
+function keys(value: Json): Json {
+    return __builtin_json_keys(value);
+}
+
+function as_string(value: Json, fallback: string): string {
+    return __builtin_json_as_string(value, fallback);
+}
+
+function as_int(value: Json, fallback: int): int {
+    return __builtin_json_as_int(value, fallback);
+}
+
+function as_float(value: Json, fallback: float): float {
+    return __builtin_json_as_float(value, fallback);
+}
+
+function as_bool(value: Json, fallback: bool): bool {
+    return __builtin_json_as_bool(value, fallback);
+}
+
 function escape(text: string): string {
     return __builtin_json_escape(text);
 }

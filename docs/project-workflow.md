@@ -56,6 +56,8 @@ The package can then be imported by its dependency name. `import geometry;` load
 
 To refresh a dependency to a newer commit, remove its manifest entry and installed `.alaco/packages/<name>` directory, then run `alaco add <git-repository>` again.
 
+`alaco add` refreshes `Alaco.lock` when the complete dependency graph can be resolved. Run `alaco lock` to regenerate it manually, or `alaco lock --check` in CI to reject stale lock data. A project with an `Alaco.lock` is checked against the manifest and installed Git revisions before a build or run. Local path dependencies are intentionally live directories and are not content-frozen. Version-only requirements remain unsupported until a package registry exists.
+
 ## 4. Use the check-run-build cycle
 
 ```sh
@@ -68,6 +70,9 @@ alaco build src/main.aco
 - `run` compiles and executes the program, then cleans up its temporary executable.
 - `build` produces a native executable; use `--output path` to choose the output path.
 - `test` discovers and runs `.aco` test programs under `tests/`, or under a supplied file/directory.
+- `test --list` previews discovered files; `test --filter <text>` selects matching paths. `test --setup <file>` and `test --teardown <file>` run suite-level programs around the tests. Hooks run as separate processes, so persistent fixtures must use files or external services.
+- `fmt` formats the selected source file; `fmt --check` reports drift without writing.
+- `lock` writes the resolved dependency graph; `lock --check` verifies it without changing files.
 - `clean` removes generated artifacts from the current project's `target/` directory.
 
 Within a project, commands that accept an optional source path use the configured entry point where applicable. Run `alaco --help` for the installed version's full option list.

@@ -41,6 +41,7 @@ impl JavaScriptCodegen {
             "const eprint = (...values) => process.stderr.write(values.map(String).join(' '));",
         );
         self.line("const eprintln = (...values) => console.error(...values);");
+        self.line("function __alaco_option_value(option) { if (option === null) throw new Error('attempted to read an empty Option'); return option.value; }");
         self.output.push_str(r#"
 // Node.js implementations of Alaco's runtime intrinsics.
 const __alaco_fs = require('node:fs');
@@ -76,6 +77,17 @@ function __builtin_path_is_absolute(value) { return __alaco_path.isAbsolute(valu
 function __builtin_json_is_valid(text) { try { JSON.parse(text); return true; } catch { return false; } }
 function __builtin_json_escape(text) { return String(text).replace(/[\\"\u0000-\u001f]/g, c => { const map = {'\\':'\\\\','"':'\\"','\b':'\\b','\f':'\\f','\n':'\\n','\r':'\\r','\t':'\\t'}; return map[c] ?? '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'); }); }
 function __alaco_json_value(text, key) { try { const v = JSON.parse(text); return v !== null && typeof v === 'object' && !Array.isArray(v) && Object.prototype.hasOwnProperty.call(v, key) ? v[key] : undefined; } catch { return undefined; } }
+function __builtin_json_parse(text) { return JSON.stringify(JSON.parse(text)); }
+function __builtin_json_stringify(value) { return JSON.stringify(JSON.parse(value)); }
+function __builtin_json_kind(value) { const v = JSON.parse(value); return v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v === 'object' ? 'object' : typeof v; }
+function __builtin_json_get(value, key) { const v = JSON.parse(value); return JSON.stringify(v !== null && typeof v === 'object' && !Array.isArray(v) && Object.prototype.hasOwnProperty.call(v, key) ? v[key] : null); }
+function __builtin_json_at(value, index) { const v = JSON.parse(value); return JSON.stringify(Array.isArray(v) && Number.isInteger(index) && index >= 0 && index < v.length ? v[index] : null); }
+function __builtin_json_length(value) { const v = JSON.parse(value); return v !== null && typeof v === 'object' ? (Array.isArray(v) ? v.length : Object.keys(v).length) : 0; }
+function __builtin_json_keys(value) { const v = JSON.parse(value); return JSON.stringify(v !== null && typeof v === 'object' && !Array.isArray(v) ? Object.keys(v) : []); }
+function __builtin_json_as_string(value, fallback) { const v = JSON.parse(value); return typeof v === 'string' ? v : fallback; }
+function __builtin_json_as_int(value, fallback) { const v = JSON.parse(value); return Number.isSafeInteger(v) ? v : fallback; }
+function __builtin_json_as_float(value, fallback) { const v = JSON.parse(value); return typeof v === 'number' && Number.isFinite(v) ? v : fallback; }
+function __builtin_json_as_bool(value, fallback) { const v = JSON.parse(value); return typeof v === 'boolean' ? v : fallback; }
 function __builtin_json_has_key(text, key) { try { const v = JSON.parse(text); return v !== null && typeof v === 'object' && !Array.isArray(v) && Object.prototype.hasOwnProperty.call(v, key); } catch { return false; } }
 function __builtin_json_is_null(text, key) { try { const v = JSON.parse(text); return v !== null && typeof v === 'object' && !Array.isArray(v) && Object.prototype.hasOwnProperty.call(v, key) && v[key] === null; } catch { return false; } }
 function __builtin_json_get_int(text, key, fallback) { const v = __alaco_json_value(text, key); return typeof v === 'number' && Number.isSafeInteger(v) ? v : fallback; }
@@ -325,6 +337,30 @@ function __builtin_db_migrate(id, version, sql) { const database = __alaco_db_ge
                     .map(|v| format!("return {};", self.expr(v)))
                     .unwrap_or_else(|| "return;".into()),
             ),
+            IrStmt::Throw(value, _) => {
+                self.line(&format!("throw new Error({});", self.expr(value)));
+            }
+            IrStmt::TryCatch {
+                try_block,
+                error_name,
+                catch_block,
+                span,
+            } => {
+                let exception_name = format!("__alaco_exception_{}", span.start);
+                self.line("try {");
+                self.indent += 1;
+                self.block(try_block);
+                self.indent -= 1;
+                self.line(&format!("}} catch ({}) {{", exception_name));
+                self.indent += 1;
+                self.line(&format!(
+                    "const {} = String({}?.message ?? {});",
+                    error_name, exception_name, exception_name
+                ));
+                self.block(catch_block);
+                self.indent -= 1;
+                self.line("}");
+            }
             IrStmt::Skip(_) => self.line("continue;"),
             IrStmt::Expr(expr, _) => self.line(&format!("{};", self.expr(expr))),
             IrStmt::If {
@@ -423,6 +459,7 @@ function __builtin_db_migrate(id, version, sql) { const database = __alaco_db_ge
                 s
             }
             IrExprKind::Bool(b) => b.to_string(),
+            IrExprKind::None => "null".into(),
             IrExprKind::Identifier(n) => n.clone(),
             IrExprKind::Previous(n) => format!("__alaco_previous[{}]", js_string(n)),
             IrExprKind::StructLiteral { name, fields } => format!(
@@ -496,16 +533,36 @@ function __builtin_db_migrate(id, version, sql) { const database = __alaco_db_ge
                 },
                 self.expr(operand)
             ),
-            IrExprKind::Call { callee, arguments } => format!(
-                "{}({})",
-                self.callee(callee),
-                arguments
-                    .iter()
-                    .map(|a| self.expr(a))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-            IrExprKind::Member { object, member } => format!("{}.{}", self.expr(object), member),
+            IrExprKind::Call { callee, arguments } => {
+                if matches!(callee, IrCallee::Identifier(name) if name == "some")
+                    && matches!(&e.ty, Type::Applied(name, _) if name == "Option")
+                    && let Some(value) = arguments.first()
+                {
+                    return format!("({{ __alaco_option: true, value: {} }})", self.expr(value));
+                }
+                format!(
+                    "{}({})",
+                    self.callee(callee),
+                    arguments
+                        .iter()
+                        .map(|a| self.expr(a))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            }
+            IrExprKind::Member { object, member } => {
+                if matches!(&object.ty, Type::Applied(name, _) if name == "Option") {
+                    let object = self.expr(object);
+                    match member.as_str() {
+                        "is_some" => format!("({object} !== null)"),
+                        "is_none" => format!("({object} === null)"),
+                        "value" => format!("__alaco_option_value({object})"),
+                        _ => format!("{object}.{member}"),
+                    }
+                } else {
+                    format!("{}.{}", self.expr(object), member)
+                }
+            }
             IrExprKind::Shell { command } => format!(
                 "require('node:child_process').execSync({}, {{ encoding: 'utf8' }})",
                 js_string(command)
@@ -589,7 +646,8 @@ fn _type_name_for_future_backend(ty: &Type) -> &'static str {
     match ty {
         Type::Int | Type::Float => "number",
         Type::Bool => "boolean",
-        Type::String => "string",
+        Type::String | Type::Json => "string",
+        Type::Never => "undefined",
         Type::Void => "undefined",
         _ => "unknown",
     }

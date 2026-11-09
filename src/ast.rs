@@ -126,6 +126,15 @@ pub enum Stmt {
 
     Return(Option<Expr>, Span),
 
+    Throw(Expr, Span),
+
+    TryCatch {
+        try_block: Block,
+        error_name: String,
+        catch_block: Block,
+        span: Span,
+    },
+
     Stop(Option<Expr>, Span),
 
     Skip(Span),
@@ -183,6 +192,7 @@ pub enum Expr {
     String(String, Span),
     Interpolation(Vec<String>, Span),
     Bool(bool, Span),
+    None(Span),
 
     Identifier(String, Span),
     Previous(String, Span),
@@ -245,6 +255,7 @@ impl Expr {
             Expr::String(_, span) => *span,
             Expr::Interpolation(_, span) => *span,
             Expr::Bool(_, span) => *span,
+            Expr::None(span) => *span,
             Expr::Identifier(_, span) => *span,
             Expr::Previous(_, span) => *span,
             Expr::StructLiteral { span, .. } => *span,
@@ -265,6 +276,8 @@ impl Stmt {
             Stmt::Let { span, .. } => *span,
             Stmt::Destructure { span, .. } => *span,
             Stmt::Return(_, span) => *span,
+            Stmt::Throw(_, span) => *span,
+            Stmt::TryCatch { span, .. } => *span,
             Stmt::Stop(_, span) => *span,
             Stmt::Skip(span) => *span,
             Stmt::If { span, .. } => *span,
@@ -289,6 +302,8 @@ pub enum Type {
     Float,
     Bool,
     String,
+    Json,
+    Never,
     Shell,
     ShellResult,
     Void,

@@ -76,6 +76,7 @@ pub fn validate_expression_coverage(
             | ast::Expr::String(..)
             | ast::Expr::Interpolation(..)
             | ast::Expr::Bool(..)
+            | ast::Expr::None(..)
             | ast::Expr::Identifier(..)
             | ast::Expr::Previous(..)
             | ast::Expr::Shell { .. } => {}
@@ -127,6 +128,15 @@ pub fn validate_expression_coverage(
                     if let Some(value) = value {
                         expr(value, types, ids)?;
                     }
+                }
+                ast::Stmt::Throw(value, _) => expr(value, types, ids)?,
+                ast::Stmt::TryCatch {
+                    try_block,
+                    catch_block,
+                    ..
+                } => {
+                    block(try_block, types, ids)?;
+                    block(catch_block, types, ids)?;
                 }
                 ast::Stmt::Skip(_) => {}
                 ast::Stmt::If {
@@ -254,6 +264,13 @@ pub enum IrStmt {
         span: Span,
     },
     Return(Option<IrExpr>, Span),
+    Throw(IrExpr, Span),
+    TryCatch {
+        try_block: IrBlock,
+        error_name: String,
+        catch_block: IrBlock,
+        span: Span,
+    },
     Stop(Option<IrExpr>, Span),
     Skip(Span),
     If {
@@ -336,6 +353,7 @@ pub enum IrExprKind {
     String(String),
     Interpolation(Vec<String>),
     Bool(bool),
+    None,
     Identifier(String),
     Previous(String),
     StructLiteral {
@@ -511,6 +529,18 @@ fn lower_stmt(stmt: &ast::Stmt, types: &ExpressionTypes, ids: &ExpressionIds) ->
         ast::Stmt::Return(value, span) => {
             IrStmt::Return(value.as_ref().map(|e| lower_expr(e, types, ids)), *span)
         }
+        ast::Stmt::Throw(value, span) => IrStmt::Throw(lower_expr(value, types, ids), *span),
+        ast::Stmt::TryCatch {
+            try_block,
+            error_name,
+            catch_block,
+            span,
+        } => IrStmt::TryCatch {
+            try_block: lower_block(try_block, types, ids),
+            error_name: error_name.clone(),
+            catch_block: lower_block(catch_block, types, ids),
+            span: *span,
+        },
         ast::Stmt::Stop(value, span) => {
             IrStmt::Stop(value.as_ref().map(|e| lower_expr(e, types, ids)), *span)
         }
@@ -596,6 +626,7 @@ fn lower_expr(expr: &ast::Expr, types: &ExpressionTypes, ids: &ExpressionIds) ->
         ast::Expr::String(value, _) => IrExprKind::String(value.clone()),
         ast::Expr::Interpolation(parts, _) => IrExprKind::Interpolation(parts.clone()),
         ast::Expr::Bool(value, _) => IrExprKind::Bool(*value),
+        ast::Expr::None(_) => IrExprKind::None,
         ast::Expr::Identifier(name, _) => IrExprKind::Identifier(name.clone()),
         ast::Expr::Previous(name, _) => IrExprKind::Previous(name.clone()),
         ast::Expr::StructLiteral { name, fields, .. } => IrExprKind::StructLiteral {

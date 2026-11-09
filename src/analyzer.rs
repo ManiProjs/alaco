@@ -148,6 +148,8 @@ impl<'a> Analyzer<'a> {
                         | "Float"
                         | "Bool"
                         | "String"
+                        | "Json"
+                        | "json"
                         | "Shell"
                         | "ShellResult"
                         | "Void"
@@ -178,6 +180,8 @@ impl<'a> Analyzer<'a> {
                         | "Float"
                         | "Bool"
                         | "String"
+                        | "Json"
+                        | "json"
                         | "Shell"
                         | "ShellResult"
                         | "Void"
@@ -519,6 +523,37 @@ impl<'a> Analyzer<'a> {
                 ("__builtin_path_is_absolute", vec![Type::String], Type::Bool),
                 ("__builtin_json_is_valid", vec![Type::String], Type::Bool),
                 ("__builtin_json_escape", vec![Type::String], Type::String),
+                ("__builtin_json_parse", vec![Type::String], Type::Json),
+                ("__builtin_json_stringify", vec![Type::Json], Type::String),
+                ("__builtin_json_kind", vec![Type::Json], Type::String),
+                (
+                    "__builtin_json_get",
+                    vec![Type::Json, Type::String],
+                    Type::Json,
+                ),
+                ("__builtin_json_at", vec![Type::Json, Type::Int], Type::Json),
+                ("__builtin_json_length", vec![Type::Json], Type::Int),
+                ("__builtin_json_keys", vec![Type::Json], Type::Json),
+                (
+                    "__builtin_json_as_string",
+                    vec![Type::Json, Type::String],
+                    Type::String,
+                ),
+                (
+                    "__builtin_json_as_int",
+                    vec![Type::Json, Type::Int],
+                    Type::Int,
+                ),
+                (
+                    "__builtin_json_as_float",
+                    vec![Type::Json, Type::Float],
+                    Type::Float,
+                ),
+                (
+                    "__builtin_json_as_bool",
+                    vec![Type::Json, Type::Bool],
+                    Type::Bool,
+                ),
                 (
                     "__builtin_json_has_key",
                     vec![Type::String, Type::String],
@@ -796,6 +831,14 @@ impl<'a> Analyzer<'a> {
         for statement in &block.statements {
             let always_returns = match statement {
                 Stmt::Return(..) => true,
+                Stmt::TryCatch {
+                    try_block,
+                    catch_block,
+                    ..
+                } => {
+                    Self::block_guarantees_return(try_block, program)
+                        && Self::block_guarantees_return(catch_block, program)
+                }
                 Stmt::If {
                     then_block,
                     else_block: Some(else_block),
@@ -1108,6 +1151,52 @@ impl<'a> Analyzer<'a> {
                 )?;
             }
 
+            Stmt::Throw(value, _) => {
+                let actual_type = self.type_of_expression(value, scopes, program, functions)?;
+                self.require_type_at(&Type::String, &actual_type, "thrown value", value.span())?;
+            }
+
+            Stmt::TryCatch {
+                try_block,
+                error_name,
+                catch_block,
+                span,
+            } => {
+                self.analyze_block(
+                    try_block,
+                    scopes,
+                    loop_depth,
+                    expected_return,
+                    program,
+                    functions,
+                )?;
+
+                scopes.push(HashMap::new());
+                scopes
+                    .last_mut()
+                    .expect("analyzer scope stack is empty")
+                    .insert(
+                        error_name.clone(),
+                        Variable {
+                            ty: Type::String,
+                            mutable: false,
+                        },
+                    );
+                let catch_result = self.analyze_block_with_existing_scope(
+                    catch_block,
+                    scopes,
+                    loop_depth,
+                    expected_return,
+                    program,
+                    functions,
+                );
+                scopes.pop();
+                catch_result?;
+                if error_name.is_empty() {
+                    return Err(self.error("catch binding cannot be empty", Some(*span)));
+                }
+            }
+
             Stmt::Stop(value, span) => {
                 if loop_depth == 0 {
                     return Err(AlacoError::StopOutsideLoop {
@@ -1409,6 +1498,8 @@ impl<'a> Analyzer<'a> {
             }
 
             Expr::Bool(_, _) => Ok(Type::Bool),
+
+            Expr::None(_) => Ok(Type::Applied("Option".into(), vec![Type::Never])),
 
             // Shell expressions are first-class values.
             //
@@ -1735,6 +1826,17 @@ impl<'a> Analyzer<'a> {
                 )),
             },
 
+            Type::Applied(name, arguments) if name == "Option" && arguments.len() == 1 => {
+                match member {
+                    "is_some" | "is_none" => Ok(Type::Bool),
+                    "value" => Ok(arguments[0].clone()),
+                    _ => Err(self.error(
+                        format!("type 'Option' has no member '{}'", member),
+                        Some(span),
+                    )),
+                }
+            }
+
             _ => Err(self.error(
                 format!("type '{}' has no members", self.type_name(object_type)),
                 Some(span),
@@ -1769,6 +1871,30 @@ impl<'a> Analyzer<'a> {
         program: &Program,
         functions: &HashMap<String, FunctionInfo>,
     ) -> Result<Type, AlacoError> {
+        if let Expr::Identifier(name, span) = callee
+            && name == "some"
+            && !functions.contains_key(name)
+            && self.find_variable(scopes, name).is_none()
+        {
+            if arguments.len() != 1 {
+                return Err(self.error(
+                    format!(
+                        "function 'some' expects 1 argument(s), but {} were provided",
+                        arguments.len()
+                    ),
+                    Some(*span),
+                ));
+            }
+            let inner = self.type_of_expression(arguments[0], scopes, program, functions)?;
+            if inner == Type::Void {
+                return Err(self.error(
+                    "some() cannot wrap a Void expression",
+                    Some(arguments[0].span()),
+                ));
+            }
+            return Ok(Type::Applied("Option".into(), vec![inner]));
+        }
+
         if let Expr::Identifier(name, span) = callee
             && self.find_variable(scopes, name).is_none()
         {
@@ -2344,6 +2470,15 @@ impl<'a> Analyzer<'a> {
             return true;
         }
 
+        if let (Type::Applied(expected_name, _), Type::Applied(actual_name, actual_arguments)) =
+            (expected, actual)
+            && expected_name == "Option"
+            && actual_name == "Option"
+            && actual_arguments.as_slice() == [Type::Never]
+        {
+            return true;
+        }
+
         // Numeric widening:
         //
         // Int -> Float
@@ -2388,6 +2523,8 @@ impl<'a> Analyzer<'a> {
             Type::Float => "Float".to_string(),
             Type::Bool => "Bool".to_string(),
             Type::String => "String".to_string(),
+            Type::Json => "Json".to_string(),
+            Type::Never => "Never".to_string(),
             Type::Shell => "Shell".to_string(),
             Type::ShellResult => "ShellResult".to_string(),
             Type::Void => "Void".to_string(),

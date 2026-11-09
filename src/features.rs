@@ -105,6 +105,14 @@ fn expand_derived_block(block: &mut Block, inherited: &[DerivedValue]) -> Result
                 }
             }
             Stmt::When { body, .. } => expand_derived_block(body, &active)?,
+            Stmt::TryCatch {
+                try_block,
+                catch_block,
+                ..
+            } => {
+                expand_derived_block(try_block, &active)?;
+                expand_derived_block(catch_block, &active)?;
+            }
             _ => {}
         }
 
@@ -222,6 +230,7 @@ fn collect_expression_names(expression: &Expr, names: &mut HashSet<String>) {
         | Expr::String(..)
         | Expr::Interpolation(..)
         | Expr::Bool(..)
+        | Expr::None(..)
         | Expr::Previous(..)
         | Expr::Shell { .. } => {}
     }
@@ -236,6 +245,7 @@ fn collect_statement_writes(statement: &Stmt, writes: &mut HashSet<String>) {
         Stmt::Return(Some(value), _) | Stmt::Stop(Some(value), _) => {
             collect_expression_writes(value, writes)
         }
+        Stmt::Throw(value, _) => collect_expression_writes(value, writes),
         Stmt::If { condition, .. } => {
             collect_expression_writes(condition, writes);
         }
@@ -255,6 +265,7 @@ fn collect_statement_writes(statement: &Stmt, writes: &mut HashSet<String>) {
             collect_expression_writes(condition, writes);
         }
         Stmt::Return(None, _) | Stmt::Stop(None, _) | Stmt::Skip(_) | Stmt::Derive { .. } => {}
+        Stmt::TryCatch { .. } => {}
     }
 }
 
@@ -311,6 +322,7 @@ fn collect_expression_writes(expression: &Expr, writes: &mut HashSet<String>) {
         | Expr::String(..)
         | Expr::Interpolation(..)
         | Expr::Bool(..)
+        | Expr::None(..)
         | Expr::Identifier(..)
         | Expr::Previous(..)
         | Expr::Shell { .. } => {}
@@ -347,6 +359,14 @@ fn expand_block(block: &mut Block) {
                 }
             }
             Stmt::When { body, .. } => expand_block(body),
+            Stmt::TryCatch {
+                try_block,
+                catch_block,
+                ..
+            } => {
+                expand_block(try_block);
+                expand_block(catch_block);
+            }
             _ => {}
         }
     }

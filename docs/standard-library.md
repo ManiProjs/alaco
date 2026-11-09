@@ -192,12 +192,20 @@ Import with `import std.path;`. These functions inspect or combine path strings;
 
 Path parsing and joining follow `std::filesystem` semantics, so separator and absolute-path behavior can differ between operating systems.
 
-## `std.json` — JSON text utilities
+## `std.json` — JSON values and text utilities
 
 Import with `import std.json;`.
 
 | Function | Behavior and limitations |
 | --- | --- |
+| `parse(text: string): Json` | Parse a JSON document into an opaque `Json` value. Invalid input raises a runtime error. |
+| `stringify(value: Json)` | Serialize a JSON value back to JSON text. |
+| `kind(value: Json)` | Return `null`, `bool`, `number`, `string`, `array`, or `object`. |
+| `get(value: Json, key: string)` | Read an immediate object property as `Json`; absent keys return JSON `null`. |
+| `at(value: Json, index: int)` | Read an immediate array element using a zero-based index; invalid indices return JSON `null`. |
+| `length(value: Json)` | Return the immediate array length or object property count; scalars return zero. |
+| `keys(value: Json)` | Return object property names as a JSON array of strings. Non-objects return `[]`. |
+| `as_string`, `as_int`, `as_float`, `as_bool` | Convert a JSON scalar when its type matches; otherwise return the supplied fallback. |
 | `is_valid(text: string)` | Validate a JSON value, including nested arrays and objects, strings, numbers, booleans, and `null`. |
 | `escape(text: string)` | Escape string contents for use inside a JSON string; it does not add surrounding quotes. |
 | `quote(text: string)` | Escape a string and add JSON double quotes. |
@@ -207,9 +215,24 @@ Import with `import std.json;`.
 | `get_int(text: string, key: string, fallback: int)` | Read a top-level integer property or return the fallback. |
 | `get_bool(text: string, key: string, fallback: bool)` | Read a top-level boolean property or return the fallback. |
 
-These typed accessors read top-level object properties; they do not expose a dynamic JSON value/map/list type or recursively navigate nested objects. string access decodes JSON escapes, including Unicode escapes and surrogate pairs. `has_key` distinguishes a present `null` from a missing property; use `is_null` to check the value itself.
+`Json` is an opaque value type, not an Alaco struct or a promise of static field types. `get` and `at` return another `Json`, so nested objects and arrays can be traversed repeatedly. Use `kind` before a typed conversion, and use `has_key` on the containing object to distinguish an absent property from a property explicitly set to `null`. The older text-based accessors remain available for compatibility and only inspect top-level object properties. JSON parsing and serialization preserve JSON value types; formatting/whitespace is not preserved by the JavaScript backend's serializer.
 
-The helpers are intended for small configuration payloads and straightforward lookups. If a key is nested, or if you need to preserve arbitrary JSON values and types, these accessors are not enough by themselves. `quote` is useful when constructing a JSON string literal; `escape` only escapes the contents and does not add quotes.
+`quote` is useful when constructing a JSON string literal; `escape` only escapes the contents and does not add quotes. `Json` values currently support parsing, traversal, inspection, and scalar conversion; direct object/array construction and mutation are not yet part of the API.
+
+## `std.test` — test assertions
+
+Import with `import std.test;` in executable test programs.
+
+| Function | Behavior |
+| --- | --- |
+| `fail(message)` | Unconditionally fail the current test by throwing `message`. |
+| `assert(condition, message)` | Fail when the condition is false. |
+| `assert_true(condition)`, `assert_false(condition)` | Assert a boolean value. |
+| `assert_equal_int(actual, expected)` | Compare integer values and include both values in a failure message. |
+| `assert_equal_string(actual, expected)` | Compare strings and include both values in a failure message. |
+| `assert_equal_bool(actual, expected)` | Compare boolean values and include both values in a failure message. |
+
+These helpers are ordinary Alaco functions built on runtime errors, so an uncaught assertion failure makes the test process fail and the `alaco test` runner reports its captured output. Use `try`/`catch` when a test is specifically checking that an operation raises an error.
 
 ## `std.toml` — TOML configuration utilities
 

@@ -116,7 +116,7 @@ fn validate_block(block: &IrBlock, return_type: &Type) -> Result<(), AlacoError>
         match statement {
             IrStmt::Let { ty, value, .. } => {
                 validate_expr(value)?;
-                if *ty != value.ty || value.ty == Type::Void {
+                if !types_compatible(ty, &value.ty) || value.ty == Type::Void {
                     return Err(invariant(
                         "let binding type does not match its value".into(),
                     ));
@@ -126,7 +126,7 @@ fn validate_block(block: &IrBlock, return_type: &Type) -> Result<(), AlacoError>
             IrStmt::Return(value, _) => {
                 if let Some(value) = value {
                     validate_expr(value)?;
-                    if *return_type == Type::Void || value.ty != *return_type {
+                    if *return_type == Type::Void || !types_compatible(return_type, &value.ty) {
                         return Err(invariant(
                             "return value type does not match function return type".into(),
                         ));
@@ -136,6 +136,24 @@ fn validate_block(block: &IrBlock, return_type: &Type) -> Result<(), AlacoError>
                         "non-void function contains an empty return".into(),
                     ));
                 }
+            }
+            IrStmt::Throw(value, _) => {
+                validate_expr(value)?;
+                if value.ty != Type::String {
+                    return Err(invariant("thrown value is not String".into()));
+                }
+            }
+            IrStmt::TryCatch {
+                try_block,
+                error_name,
+                catch_block,
+                ..
+            } => {
+                if error_name.is_empty() {
+                    return Err(invariant("try/catch error binding is empty".into()));
+                }
+                validate_block(try_block, return_type)?;
+                validate_block(catch_block, return_type)?;
             }
             IrStmt::Stop(value, _) => {
                 if let Some(value) = value {
@@ -197,6 +215,7 @@ fn validate_expr(expr: &IrExpr) -> Result<(), AlacoError> {
         | IrExprKind::String(_)
         | IrExprKind::Interpolation(_)
         | IrExprKind::Bool(_)
+        | IrExprKind::None
         | IrExprKind::Identifier(_)
         | IrExprKind::Previous(_)
         | IrExprKind::Shell { .. } => {}
@@ -245,6 +264,19 @@ fn validate_callee(callee: &IrCallee) -> Result<(), AlacoError> {
         IrCallee::Member { object, .. } => validate_callee(object),
         IrCallee::Value(expr) => validate_expr(expr),
     }
+}
+
+fn types_compatible(expected: &Type, actual: &Type) -> bool {
+    expected == actual
+        || matches!(
+            (expected, actual),
+            (
+                Type::Applied(expected_name, _),
+                Type::Applied(actual_name, actual_arguments)
+            ) if expected_name == "Option"
+                && actual_name == "Option"
+                && actual_arguments.as_slice() == [Type::Never]
+        )
 }
 
 fn invariant(message: String) -> AlacoError {

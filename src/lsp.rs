@@ -1204,6 +1204,16 @@ impl Server {
         let Some((_, source)) = self.source(params) else {
             return json!([]);
         };
+        if range.is_none() {
+            let Ok(formatted) = format_source(source) else {
+                return json!([]);
+            };
+            if formatted == source {
+                return json!([]);
+            }
+            let end = position_at(source, source.len());
+            return json!([{"range":{"start":{"line":0,"character":0},"end":{"line":end[0],"character":end[1]}},"newText":formatted}]);
+        }
         let tokens = lex(source).unwrap_or_default();
         let mut brace_delta = vec![0i32; source.lines().count().max(1)];
         for token in &tokens {
@@ -1518,6 +1528,42 @@ fn fallback_diagnostic_range(error: &AlacoError, source: &str) -> Option<(usize,
 fn lex(source: &str) -> Result<Vec<Token>, AlacoError> {
     Lexer::new(source).tokenize()
 }
+
+/// Format source using the same conservative whitespace rules exposed by the LSP.
+/// The formatter deliberately preserves comments, blank lines, and statement layout.
+pub(crate) fn format_source(source: &str) -> Result<String, AlacoError> {
+    let tokens = lex(source)?;
+    let mut brace_delta = vec![0i32; source.lines().count().max(1)];
+    for token in &tokens {
+        let line = position_at(source, token.span.offset())[0] as usize;
+        if let Some(delta) = brace_delta.get_mut(line) {
+            match token.kind {
+                TokenKind::LeftBrace => *delta += 1,
+                TokenKind::RightBrace => *delta -= 1,
+                _ => {}
+            }
+        }
+    }
+    let mut depth = 0i32;
+    let mut output = Vec::new();
+    for (index, line) in source.lines().enumerate() {
+        let trimmed = line.trim();
+        let leading_close = trimmed.starts_with('}') || trimmed.starts_with(')');
+        let indent = (depth - i32::from(leading_close)).max(0) as usize;
+        output.push(if trimmed.is_empty() {
+            String::new()
+        } else {
+            format!("{}{}", "    ".repeat(indent), normalize_spacing(trimmed))
+        });
+        depth = (depth + brace_delta.get(index).copied().unwrap_or(0)).max(0);
+    }
+    let mut formatted = output.join("\n");
+    if source.ends_with('\n') {
+        formatted.push('\n');
+    }
+    Ok(formatted)
+}
+
 fn parse(source: &str) -> Result<Program, AlacoError> {
     Parser::new(lex(source)?).parse()
 }
@@ -1904,7 +1950,7 @@ fn semantic_type(
         TokenKind::Identifier(name)
             if matches!(
                 name.as_str(),
-                "Int" | "Float" | "Bool" | "String" | "Void" | "Shell" | "ShellResult"
+                "Int" | "Float" | "Bool" | "String" | "Json" | "Void" | "Shell" | "ShellResult"
             ) =>
         {
             1
@@ -1920,6 +1966,8 @@ fn type_name(ty: &Type) -> String {
         Type::Float => "Float".into(),
         Type::Bool => "Bool".into(),
         Type::String => "String".into(),
+        Type::Json => "Json".into(),
+        Type::Never => "Never".into(),
         Type::Shell => "Shell".into(),
         Type::ShellResult => "ShellResult".into(),
         Type::Void => "Void".into(),

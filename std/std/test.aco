@@ -1,0 +1,42 @@
+// Small assertion helpers for executable Alaco test programs.
+// An assertion failure throws a message; an uncaught failure exits the test
+// process unsuccessfully and is reported by `alaco test`.
+function fail(message: string) {
+    throw message;
+}
+
+function assert(condition: bool, message: string) {
+    if !condition {
+        throw message;
+    }
+}
+
+function assert_true(condition: bool) {
+    if !condition {
+        throw "expected true, got false";
+    }
+}
+
+function assert_false(condition: bool) {
+    if condition {
+        throw "expected false, got true";
+    }
+}
+
+function assert_equal_int(actual: int, expected: int) {
+    if actual != expected {
+        throw "expected ${expected}, got ${actual}";
+    }
+}
+
+function assert_equal_string(actual: string, expected: string) {
+    if actual != expected {
+        throw "expected \"${expected}\", got \"${actual}\"";
+    }
+}
+
+function assert_equal_bool(actual: bool, expected: bool) {
+    if actual != expected {
+        throw "expected ${expected}, got ${actual}";
+    }
+}

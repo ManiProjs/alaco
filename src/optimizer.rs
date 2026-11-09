@@ -22,6 +22,15 @@ fn optimize_block(block: &mut IrBlock) {
                     optimize_expr(value);
                 }
             }
+            IrStmt::Throw(value, _) => optimize_expr(value),
+            IrStmt::TryCatch {
+                try_block,
+                catch_block,
+                ..
+            } => {
+                optimize_block(try_block);
+                optimize_block(catch_block);
+            }
             IrStmt::Skip(_) => {}
             IrStmt::If {
                 condition,
@@ -90,6 +99,7 @@ fn optimize_expr(expr: &mut IrExpr) {
         | IrExprKind::String(_)
         | IrExprKind::Interpolation(_)
         | IrExprKind::Bool(_)
+        | IrExprKind::None
         | IrExprKind::Identifier(_)
         | IrExprKind::Previous(_)
         | IrExprKind::Shell { .. } => {}
