@@ -404,6 +404,7 @@ impl<'a> Lexer<'a> {
             "repeat" => self.add_token(TokenKind::Repeat),
             "while" => self.add_token(TokenKind::While),
             "when" => self.add_token(TokenKind::When),
+            "watch" => self.add_token(TokenKind::Watch),
             "derive" => self.add_token(TokenKind::Derive),
             "previous" => self.add_token(TokenKind::Previous),
             "for" => self.add_token(TokenKind::For),

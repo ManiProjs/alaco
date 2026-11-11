@@ -22,6 +22,7 @@ pub enum TokenKind {
     Repeat,
     While,
     When,
+    Watch,
     Derive,
     Previous,
     For,

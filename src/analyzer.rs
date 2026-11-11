@@ -1351,8 +1351,17 @@ impl<'a> Analyzer<'a> {
                     functions,
                 )?;
             }
+            Stmt::Watch { body, .. } => {
+                self.analyze_block(
+                    body,
+                    scopes,
+                    loop_depth,
+                    expected_return,
+                    program,
+                    functions,
+                )?;
+            }
         }
-
         Ok(())
     }
 

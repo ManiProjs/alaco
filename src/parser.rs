@@ -370,6 +370,7 @@ impl Parser {
                     | Stmt::Loop { .. }
                     | Stmt::Match { .. }
                     | Stmt::When { .. }
+                    | Stmt::Watch { .. }
                     | Stmt::TryCatch { .. }
             );
 
@@ -403,6 +404,7 @@ impl Parser {
             TokenKind::If => self.parse_if_statement(),
             TokenKind::Match => self.parse_match_statement(),
             TokenKind::When => self.parse_when_statement(),
+            TokenKind::Watch => self.parse_watch_statement(),
             TokenKind::Derive => self.parse_derive_statement(),
             _ => {
                 let expression = self.parse_expression()?;
@@ -764,6 +766,18 @@ impl Parser {
         let end = self.previous().span.offset() + self.previous().span.len();
         Ok(Stmt::When {
             condition,
+            body,
+            span: Span { start, end },
+        })
+    }
+
+    fn parse_watch_statement(&mut self) -> Result<Stmt, AlacoError> {
+        let start = self.peek().span.offset();
+        self.consume(&TokenKind::Watch, "expected 'watch'")?;
+        self.skip_newlines();
+        let body = self.parse_block()?;
+        let end = self.previous().span.offset() + self.previous().span.len();
+        Ok(Stmt::Watch {
             body,
             span: Span { start, end },
         })

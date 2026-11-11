@@ -173,6 +173,9 @@ pub fn validate_expression_coverage(
                     expr(condition, types, ids)?;
                     block(body, types, ids)?;
                 }
+                ast::Stmt::Watch { body, .. } => {
+                    block(body, types, ids)?;
+                }
             }
         }
         Ok(())
@@ -613,6 +616,18 @@ fn lower_stmt(stmt: &ast::Stmt, types: &ExpressionTypes, ids: &ExpressionIds) ->
             span,
         } => IrStmt::If {
             condition: lower_expr(condition, types, ids),
+            then_block: lower_block(body, types, ids),
+            else_block: None,
+            span: *span,
+        },
+        // `watch` blocks are lowered to `when` blocks by `features::expand_when`
+        // before analysis, so this arm is only a defensive fallback.
+        ast::Stmt::Watch { body, span } => IrStmt::If {
+            condition: IrExpr {
+                kind: IrExprKind::Bool(false),
+                ty: Type::Bool,
+                span: *span,
+            },
             then_block: lower_block(body, types, ids),
             else_block: None,
             span: *span,

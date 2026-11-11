@@ -105,6 +105,7 @@ fn expand_derived_block(block: &mut Block, inherited: &[DerivedValue]) -> Result
                 }
             }
             Stmt::When { body, .. } => expand_derived_block(body, &active)?,
+            Stmt::Watch { body, .. } => expand_derived_block(body, &active)?,
             Stmt::TryCatch {
                 try_block,
                 catch_block,
@@ -188,10 +189,87 @@ fn has_cycle(
     false
 }
 
+fn collect_block_names(block: &Block, names: &mut HashSet<String>) {
+    for statement in &block.statements {
+        collect_statement_names(statement, names);
+    }
+}
+
+fn collect_statement_names(statement: &Stmt, names: &mut HashSet<String>) {
+    match statement {
+        Stmt::Let { value, .. } | Stmt::Destructure { value, .. } => {
+            collect_expression_names(value, names)
+        }
+        Stmt::Return(Some(value), _) | Stmt::Throw(value, _) | Stmt::Stop(Some(value), _) => {
+            collect_expression_names(value, names)
+        }
+        Stmt::If { condition, then_block, else_block, .. } => {
+            collect_expression_names(condition, names);
+            collect_block_names(then_block, names);
+            if let Some(else_block) = else_block {
+                collect_block_names(else_block, names);
+            }
+        }
+        Stmt::Loop { body, .. } => collect_block_names(body, names),
+        Stmt::Expr(expression, _) => collect_expression_names(expression, names),
+        Stmt::Match { expression, arms, .. } => {
+            collect_expression_names(expression, names);
+            for arm in arms {
+                collect_block_names(&arm.body, names);
+            }
+        }
+        Stmt::When { condition, body, .. } => {
+            collect_expression_names(condition, names);
+            collect_block_names(body, names);
+        }
+        Stmt::Watch { body, .. } => collect_block_names(body, names),
+        Stmt::TryCatch { try_block, catch_block, .. } => {
+            collect_block_names(try_block, names);
+            collect_block_names(catch_block, names);
+        }
+        Stmt::Return(None, _) | Stmt::Stop(None, _) | Stmt::Skip(_) | Stmt::Derive { .. } => {}
+    }
+}
+
+
+fn generate_watch_condition(body: &Block, span: Span) -> Expr {
+    let mut names = HashSet::new();
+    collect_block_names(body, &mut names);
+
+    let mut condition: Option<Expr> = None;
+    for name in names {
+        let left = Expr::Identifier(name.clone(), span);
+        let right = Expr::Previous(name, span);
+        let expr = Expr::Binary {
+            left: Box::new(left),
+            operator: BinaryOp::NotEqual,
+            right: Box::new(right),
+            span,
+        };
+
+        if let Some(c) = condition {
+            condition = Some(Expr::Binary {
+                left: Box::new(c),
+                operator: BinaryOp::Or,
+                right: Box::new(expr),
+                span,
+            });
+        } else {
+            condition = Some(expr);
+        }
+    }
+    condition.unwrap_or(Expr::Bool(false, span))
+}
+
 fn collect_expression_names(expression: &Expr, names: &mut HashSet<String>) {
     match expression {
         Expr::Identifier(name, _) => {
             names.insert(name.clone());
+        }
+        Expr::Interpolation(parts, _) => {
+            for name in parts.iter().skip(1).step_by(2) {
+                names.insert(name.clone());
+            }
         }
         Expr::StructLiteral { fields, .. } => {
             for (_, value) in fields {
@@ -228,7 +306,6 @@ fn collect_expression_names(expression: &Expr, names: &mut HashSet<String>) {
         }
         Expr::Number(..)
         | Expr::String(..)
-        | Expr::Interpolation(..)
         | Expr::Bool(..)
         | Expr::None(..)
         | Expr::Previous(..)
@@ -265,7 +342,7 @@ fn collect_statement_writes(statement: &Stmt, writes: &mut HashSet<String>) {
             collect_expression_writes(condition, writes);
         }
         Stmt::Return(None, _) | Stmt::Stop(None, _) | Stmt::Skip(_) | Stmt::Derive { .. } => {}
-        Stmt::TryCatch { .. } => {}
+        Stmt::Watch { .. } | Stmt::TryCatch { .. } => {}
     }
 }
 
@@ -359,6 +436,7 @@ fn expand_block(block: &mut Block) {
                 }
             }
             Stmt::When { body, .. } => expand_block(body),
+            Stmt::Watch { body, .. } => expand_block(body),
             Stmt::TryCatch {
                 try_block,
                 catch_block,
@@ -371,9 +449,21 @@ fn expand_block(block: &mut Block) {
         }
     }
 
-    let source = std::mem::take(&mut block.statements);
+    let mut source = std::mem::take(&mut block.statements);
     let mut output = Vec::new();
     let mut watchers: Vec<(Expr, Block, Span)> = Vec::new();
+
+    // Re-process for Watch
+    let mut new_source = Vec::new();
+    for statement in source {
+        if let Stmt::Watch { body, span } = statement {
+            let condition = generate_watch_condition(&body, span);
+            new_source.push(Stmt::When { condition, body, span });
+        } else {
+            new_source.push(statement);
+        }
+    }
+    source = new_source;
 
     for statement in source {
         if let Stmt::When {

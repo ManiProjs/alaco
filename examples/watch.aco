@@ -1,0 +1,10 @@
+var price = 10;
+var tax_rate = 0.05;
+
+watch {
+    let total = price * (1 + tax_rate);
+    println("Total updated: ${total}");
+}
+
+price = 12;      // triggers the watch block
+tax_rate = 0.08; // triggers the watch block

@@ -173,6 +173,25 @@ score = 2;
 
 `when condition { ... }` checks the condition immediately when registered and after each subsequent statement in the same lexical block, running the block whenever the condition is true at one of those checkpoints. It is synchronous—not a background task. Put the `when` after the variables it observes have been declared. A watcher declared inside a block is scoped to that block.
 
+### Reactive watch blocks
+
+`watch { ... }` blocks automatically track every local variable referenced inside them and re-run the block whenever any referenced variable changes.
+
+```alaco
+var price = 10;
+var tax_rate = 0.05;
+
+watch {
+    let total = price * (1 + tax_rate);
+    println("Total updated: ${total}");
+}
+
+price = 12;      // triggers the watch block
+tax_rate = 0.08; // triggers the watch block
+```
+
+Like `when`, `watch` is a synchronous re-check mechanism. It is powered by the same compiler-generated dependencies as `derive`. Bodies referencing struct fields or array elements are not supported.
+
 ### Timed variables
 
 Give a local variable a deadline with `for` between its name and optional type:
